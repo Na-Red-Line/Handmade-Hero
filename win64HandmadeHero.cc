@@ -2,44 +2,68 @@
 #define UNICODE
 #endif
 
-#include <stdbool.h>
+#include "inc.h"
 #include <windows.h>
 
 // TODO this is global for now
-static bool Runing;
+static bool runing;
 static BITMAPINFO bitmapInfo;
 static VOID *bitmapMemory;
-static HBITMAP bitmapHandle;
-static HDC bitmapDeviceContext;
+static int bitmapWidth;
+static int bitmapHeight;
+
+inline constexpr int bytesPerPixel = 4;
+
+static void win64RenderWeirGradient(int xOffset, int yOffset) {
+  int w = bitmapWidth;
+  int h = bitmapHeight;
+
+  uint8 *row = (uint8 *)bitmapMemory;
+  int pitch = bytesPerPixel * w;
+  for (int y = 0; y < h; ++y) {
+    uint32 *pixel = (uint32 *)row;
+    for (int x = 0; x < w; ++x) {
+      // memory order: RR GG BB xx
+      // loaded in:    xx BB GG RR
+      // window:       xx RR GG BB
+      // memory order: BB GG RR xx
+      uint8 blue = x + xOffset;
+      uint8 green = y + yOffset;
+      *pixel++ = ((green << 8) | blue);
+    }
+    row += pitch;
+  }
+}
 
 static void win64ResizeDIBSection(int w, int h) {
 
   // TODO bulletproof this.
   // maybe don't free first, free after, then free first if that fails.
 
-  if (bitmapHandle != NULL) {
-    DeleteObject(bitmapHandle);
+  if (bitmapMemory) {
+    VirtualFree(bitmapMemory, 0, MEM_RELEASE);
   }
 
-  if (!bitmapDeviceContext) {
-    // TODO should we recreate these under cretain special circumstance
-    bitmapDeviceContext = CreateCompatibleDC(0);
-  }
+  bitmapWidth = w;
+  bitmapHeight = h;
 
   bitmapInfo.bmiHeader.biSize = sizeof(bitmapInfo.bmiHeader);
-  bitmapInfo.bmiHeader.biWidth = w;
-  bitmapInfo.bmiHeader.biHeight = h;
+  bitmapInfo.bmiHeader.biWidth = bitmapWidth;
+  bitmapInfo.bmiHeader.biHeight = -bitmapHeight;
   bitmapInfo.bmiHeader.biPlanes = 1;
   bitmapInfo.bmiHeader.biBitCount = 32;
   bitmapInfo.bmiHeader.biCompression = BI_RGB;
 
-  bitmapHandle =
-      CreateDIBSection(bitmapDeviceContext, &bitmapInfo, DIB_RGB_COLORS, &bitmapMemory, 0, 0);
+  int bitmapMemorySize = (bitmapWidth * bitmapHeight) * bytesPerPixel;
+  bitmapMemory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
 }
 
-static void win64UpdateWindow(HDC deviceContext, int x, int y, int w, int h) {
-  StretchDIBits(deviceContext, x, y, w, h, x, y, w, h, bitmapMemory, &bitmapInfo, DIB_RGB_COLORS,
-                SRCCOPY);
+static void win64UpdateWindow(HDC deviceContext, RECT *window) {
+  int windowWidth = window->right - window->left;
+  int windowHeight = window->bottom - window->top;
+
+  StretchDIBits(deviceContext, 0, 0, bitmapWidth, bitmapHeight, 0, 0, windowWidth, windowHeight,
+                bitmapMemory, &bitmapInfo, DIB_RGB_COLORS, SRCCOPY);
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -73,16 +97,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
   ShowWindow(window, showCode); // TODO why need
 
-  MSG msg;
-  Runing = true;
-  while (Runing) {
-    BOOL messageResult = GetMessageA(&msg, 0, 0, 0);
-    if (messageResult > 0) {
+  int xOffset = 0;
+  int yOffset = 0;
+
+  runing = true;
+  while (runing) {
+    MSG msg;
+    while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
+
+      if (msg.message == WM_QUIT) runing = false;
+
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
-    } else {
-      break;
     }
+
+    win64RenderWeirGradient(xOffset, yOffset);
+
+    HDC deviceContext = GetDC(window);
+    RECT clientRect;
+    GetClientRect(window, &clientRect);
+    win64UpdateWindow(deviceContext, &clientRect);
+    ReleaseDC(window, deviceContext);
+
+    ++xOffset;
+    yOffset += 2;
   }
 
   return 0;
@@ -102,11 +140,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
   }
   case WM_DESTROY:
     // TODO handle this as an error - recreate window
-    Runing = false;
+    runing = false;
     break;
   case WM_CLOSE:
     // TODO handle this with a message to the user
-    Runing = false;
+    runing = false;
     break;
   case WM_ACTIVATEAPP:
     OutputDebugStringA("WM_ACTIVATEAPP\n");
@@ -114,11 +152,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
   case WM_PAINT: {
     PAINTSTRUCT paint;
     HDC deviceContext = BeginPaint(window, &paint);
-    int x = paint.rcPaint.left;
-    int y = paint.rcPaint.top;
-    int w = paint.rcPaint.right - paint.rcPaint.left;
-    int h = paint.rcPaint.bottom - paint.rcPaint.top;
-    win64UpdateWindow(deviceContext, x, y, w, h);
+    RECT clientRect;
+    GetClientRect(window, &clientRect);
+    win64UpdateWindow(deviceContext, &clientRect);
     EndPaint(window, &paint);
     break;
   }
