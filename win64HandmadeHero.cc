@@ -67,8 +67,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     win64RenderWeirGradient(globalBackBuffer, xOffset, yOffset);
 
     HDC deviceContext = GetDC(window);
-    auto dem = getWindowDimension(window);
-    win64UpdateWindow(globalBackBuffer, deviceContext, dem.width, dem.height);
+    auto [width, height] = getWindowDimension(window);
+    win64UpdateWindow(globalBackBuffer, deviceContext, width, height);
     ReleaseDC(window, deviceContext);
 
     ++xOffset;
@@ -134,7 +134,7 @@ static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int
 
   buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
   buffer->info.bmiHeader.biWidth = width;
-  buffer->info.bmiHeader.biHeight = -height;
+  buffer->info.bmiHeader.biHeight = -height; // explain from top to bottom
   buffer->info.bmiHeader.biPlanes = 1;
   buffer->info.bmiHeader.biBitCount = 32;
   buffer->info.bmiHeader.biCompression = BI_RGB;
@@ -163,10 +163,9 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     break;
   case WM_PAINT: {
     PAINTSTRUCT paint;
-    auto windowDimension = getWindowDimension(window);
     HDC deviceContext = BeginPaint(window, &paint);
-    auto dem = getWindowDimension(window);
-    win64UpdateWindow(globalBackBuffer, deviceContext, dem.width, dem.height);
+    auto [width, height] = getWindowDimension(window);
+    win64UpdateWindow(globalBackBuffer, deviceContext, width, height);
     EndPaint(window, &paint);
     break;
   }
