@@ -1,9 +1,11 @@
 @echo off
 
+set LIBS=-luser32 -lgdi32 -lXinput
+
 if exist build\debug rmdir /s /q build\debug
 mkdir build\debug
 pushd build\debug
 
-clang -std=gnu++20 -g -fno-exceptions -o win64HandmadeHero.exe ../../win64HandmadeHero.cc  -luser32 -lgdi32
+clang -std=gnu++20 -g -fno-exceptions -o win64HandmadeHero.exe ../../win64HandmadeHero.cc %LIBS%
 
 popd
