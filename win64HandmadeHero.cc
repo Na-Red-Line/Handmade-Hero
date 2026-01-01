@@ -16,15 +16,16 @@ struct win64_offscreen_buffer {
   int pitch;
 };
 
-static bool runing;
+static bool global_runing;
 static win64_offscreen_buffer globalBackBuffer;
+static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 
 struct win64_window_dimension {
   int width;
   int height;
 };
 
-// graceful degradation
+// 优雅降级
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(xInputGetState) { return 0; }
@@ -78,7 +79,6 @@ static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 buffe
   if (FAILED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0))) return;
 
   if (FAILED(primaryBuffer->SetFormat(&waveFormat))) return;
-  OutputDebugStringW(L"成功创建主缓冲区\n");
 
   // 创建一个辅助缓冲区（真正的缓冲区）
   DSBUFFERDESC secondaryBufferDescription = {
@@ -88,9 +88,7 @@ static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 buffe
       0,
       &waveFormat,
   };
-  LPDIRECTSOUNDBUFFER secondaryBuffer;
-  if (FAILED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0))) return;
-  OutputDebugStringW(L"成功创建辅助缓冲区\n");
+  if (FAILED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &globalDSoundBuffer, 0))) return;
 }
 
 // 初始化手柄控制器API
@@ -107,7 +105,7 @@ static void win64LoadXInput() {
 static win64_window_dimension getWindowDimension(HWND window);
 static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset, int yOffset);
 static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
-static void win64UpdateWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
+static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -131,20 +129,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 0);
   if (!window) return 0;
 
-  win64LoadInitDSound(window, 48000, 48000 * sizeof(int16) * 2);
   win64LoadXInput();
 
   HDC deviceContext = GetDC(window);
   win64ResizeDIBSection(&globalBackBuffer, 1280, 720);
 
+  // 声音 方波
+  constexpr int samplesPerSecond = 48000;
+  constexpr int toneVolume = 3000;
+  constexpr int toneHz = 256;                                // 一秒钟震动次数
+  constexpr int squareWavePeroid = samplesPerSecond / 256;   // 每秒采样数
+  constexpr int halfSquareWavePeroid = squareWavePeroid / 2; // 方形波上下一半的周期
+  constexpr int bytesPerSample = sizeof(int16) * 2;          // 双声道，左右各16比特，2字节
+  constexpr int DSoundBufferSize = samplesPerSecond * bytesPerSample;
+
+  uint32 runingSampleIndex = 0;
+  bool soundPlaying = true;
+  win64LoadInitDSound(window, samplesPerSecond, DSoundBufferSize);
+
+  // 图形
   int xOffset = 0;
   int yOffset = 0;
 
-  runing = true;
-  while (runing) {
+  global_runing = true;
+  while (global_runing) {
     MSG msg;
     while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
-      if (msg.message == WM_QUIT) runing = false;
+      if (msg.message == WM_QUIT) global_runing = false;
 
       TranslateMessage(&msg);
       DispatchMessageA(&msg);
@@ -185,8 +196,58 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     win64RenderWeirGradient(&globalBackBuffer, xOffset, yOffset);
 
+    DWORD playCursor;  // 当前播放光标
+    DWORD writeCursor; // 可写入光标
+
+    if (SUCCEEDED(globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
+      DWORD byteToLock = runingSampleIndex * bytesPerSample % DSoundBufferSize;
+      DWORD bytesToWrite;
+      // 写入区域的两种情况
+      if (byteToLock == playCursor) {
+        bytesToWrite = DSoundBufferSize;
+      } else if (byteToLock > playCursor) {
+        bytesToWrite = DSoundBufferSize - byteToLock + playCursor;
+      } else {
+        bytesToWrite = playCursor - byteToLock;
+      }
+
+      // 加锁获取可写内存指针
+      VOID *region1, *region2;
+      DWORD region1Size, region2Size;
+      if (SUCCEEDED(globalDSoundBuffer->Lock(byteToLock, bytesToWrite,
+                                             &region1, &region1Size,
+                                             &region2, &region2Size,
+                                             0))) {
+
+        int16 *sampleOut = (int16 *)region1;
+        DWORD region1SampleCount = region1Size / bytesPerSample;
+        for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+          // 赫兹/频率/2 取模写入方形波正负能量
+          int16 sampleValue = ((runingSampleIndex++ / halfSquareWavePeroid) & 1) == 0 ? toneVolume : -toneVolume;
+          // 写入左右双声道
+          *sampleOut++ = sampleValue;
+          *sampleOut++ = sampleValue;
+        }
+
+        sampleOut = (int16 *)region2;
+        DWORD region2SampleCount = region2Size / bytesPerSample;
+        for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
+          int16 sampleValue = ((runingSampleIndex++ / halfSquareWavePeroid) & 1) == 0 ? toneVolume : -toneVolume;
+          *sampleOut++ = sampleValue;
+          *sampleOut++ = sampleValue;
+        }
+
+        globalDSoundBuffer->Unlock(region1, region1Size, region2, region2Size);
+      }
+    }
+
+    if (soundPlaying) {
+      globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
+      soundPlaying = false;
+    }
+
     auto [width, height] = getWindowDimension(window);
-    win64UpdateWindow(&globalBackBuffer, deviceContext, width, height);
+    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
     ++xOffset;
     yOffset += 2;
@@ -226,9 +287,9 @@ static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset,
   }
 }
 
-static void win64UpdateWindow(win64_offscreen_buffer *buffer,
-                              HDC deviceContext,
-                              int windowWidth, int windowHeight) {
+static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer,
+                                       HDC deviceContext,
+                                       int windowWidth, int windowHeight) {
   StretchDIBits(deviceContext,
                 0, 0, windowWidth, windowHeight,
                 0, 0, buffer->width, buffer->height,
@@ -269,11 +330,11 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     break;
   case WM_DESTROY:
     // TODO handle this as an error - recreate window
-    runing = false;
+    global_runing = false;
     break;
   case WM_CLOSE:
     // TODO handle this with a message to the user
-    runing = false;
+    global_runing = false;
     break;
   case WM_ACTIVATEAPP:
     OutputDebugStringA("WM_ACTIVATEAPP\n");
@@ -310,7 +371,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     }
 
     bool32 altKeyWasDown = lParam & (1 << 29); // 按住了ALT
-    if (VKCode == VK_F4 && altKeyWasDown) runing = false;
+    if (VKCode == VK_F4 && altKeyWasDown) global_runing = false;
 
     break;
   }
@@ -318,7 +379,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     PAINTSTRUCT paint;
     HDC deviceContext = BeginPaint(window, &paint);
     auto [width, height] = getWindowDimension(window);
-    win64UpdateWindow(&globalBackBuffer, deviceContext, width, height);
+    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
     EndPaint(window, &paint);
     break;
   }
