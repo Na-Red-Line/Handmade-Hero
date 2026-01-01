@@ -3,6 +3,7 @@
 #endif
 
 #include "inc.h"
+#include <dsound.h>
 #include <windows.h>
 #include <xinput.h>
 
@@ -23,7 +24,7 @@ struct win64_window_dimension {
   int height;
 };
 
-//
+// graceful degradation
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(xInputGetState) { return 0; }
@@ -36,6 +37,63 @@ X_INPUT_SET_STATE(xInputSetState) { return 0; }
 static x_input_set_state *XInputSetState_ = xInputSetState;
 #define XInputSetState XInputSetState_
 
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPGUID lpGuid, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+DIRECT_SOUND_CREATE(directSoundCreate) { return 0; }
+static direct_sound_create *DirectSoundCreate_ = directSoundCreate;
+#define DirectSoundCreate DirectSoundCreate_
+
+// 初始化音频API
+static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
+  // Load the dsound library
+  HMODULE DSoundLibrary = LoadLibraryA("dsound.dll");
+  if (DSoundLibrary)
+    DirectSoundCreate_ = (direct_sound_create *)GetProcAddress(DSoundLibrary, "DirectSoundCreate");
+
+  LPDIRECTSOUND directSound;
+  // 使用默认音频设备
+  if (FAILED(DirectSoundCreate(0, &directSound, 0))) return;
+
+  // 左右双声道，各16bit
+  WAVEFORMATEX waveFormat = {
+      WAVE_FORMAT_PCM,         // 未压缩的 PCM 音频
+      2,                       // 立体声（双声道）
+      (DWORD)samplesPerSecond, // 采样率（如 48000 Hz）
+      0,
+      0,
+      16, // 每个采样点 16 位深度
+      0,
+  };
+  // 每个采样帧的字节数 = 通道数 × 位深度 / 8
+  waveFormat.nBlockAlign = waveFormat.nChannels * waveFormat.wBitsPerSample / 8;
+  // 每秒的字节数 = 采样率 × 块对齐
+  waveFormat.nAvgBytesPerSec = waveFormat.nSamplesPerSec * waveFormat.nBlockAlign;
+
+  // DSSCL_PRIORITY -> 可以设置主缓冲区格式
+  if (FAILED(directSound->SetCooperativeLevel(window, DSSCL_PRIORITY))) return;
+
+  // DSBCAPS_PRIMARYBUFFER -> 该缓冲区是主缓冲区（用于设置声卡格式）
+  DSBUFFERDESC bufferDescription = {sizeof(bufferDescription), DSBCAPS_PRIMARYBUFFER};
+  LPDIRECTSOUNDBUFFER primaryBuffer;
+  if (FAILED(directSound->CreateSoundBuffer(&bufferDescription, &primaryBuffer, 0))) return;
+
+  if (FAILED(primaryBuffer->SetFormat(&waveFormat))) return;
+  OutputDebugStringW(L"成功创建主缓冲区\n");
+
+  // 创建一个辅助缓冲区（真正的缓冲区）
+  DSBUFFERDESC secondaryBufferDescription = {
+      sizeof(secondaryBufferDescription),
+      0,
+      (DWORD)bufferSize,
+      0,
+      &waveFormat,
+  };
+  LPDIRECTSOUNDBUFFER secondaryBuffer;
+  if (FAILED(directSound->CreateSoundBuffer(&bufferDescription, &secondaryBuffer, 0))) return;
+  OutputDebugStringW(L"成功创建辅助缓冲区\n");
+}
+
+// 初始化手柄控制器API
 static void win64LoadXInput() {
   HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
   if (!XInputLibrary) XInputLibrary = LoadLibraryA("xinput1_3.dll");
@@ -46,8 +104,7 @@ static void win64LoadXInput() {
   }
 }
 
-static win64_window_dimension
-getWindowDimension(HWND window);
+static win64_window_dimension getWindowDimension(HWND window);
 static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset, int yOffset);
 static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
 static void win64UpdateWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
@@ -74,6 +131,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 0);
   if (!window) return 0;
 
+  win64LoadInitDSound(window, 48000, 48000 * sizeof(int16) * 2);
   win64LoadXInput();
 
   HDC deviceContext = GetDC(window);
@@ -200,7 +258,7 @@ static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int
 
   int bitmapMemorySize = (width * height) * buffer->bytesPerPixel;
   buffer->pitch = buffer->width * buffer->bytesPerPixel;
-  buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_COMMIT, PAGE_READWRITE);
+  buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -220,13 +278,13 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
   case WM_ACTIVATEAPP:
     OutputDebugStringA("WM_ACTIVATEAPP\n");
     break;
-  case WM_SYSKEYDOWN:
-  case WM_SYSKEYUP:
-  case WM_KEYDOWN:
-  case WM_KEYUP: {
+  case WM_SYSKEYDOWN: // 普通键按下
+  case WM_SYSKEYUP:   // 普通键释放
+  case WM_KEYDOWN:    // 系统键按下
+  case WM_KEYUP: {    // 系统键释放
     uint32 VKCode = wParam;
-    boolean wasDown = (lParam & (1 << 30)) != 0;
-    boolean isDown = (lParam & (1 << 31)) == 0;
+    boolean wasDown = (lParam & (1 << 30)) != 0; //  之前 按下|松开
+    boolean isDown = (lParam & (1 << 31)) == 0;  // 当前 按下|松开
 
     if (wasDown == isDown) break;
 
@@ -250,6 +308,10 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     } else if (VKCode == VK_SPACE) {
     } else {
     }
+
+    bool32 altKeyWasDown = lParam & (1 << 29); // 按住了ALT
+    if (VKCode == VK_F4 && altKeyWasDown) runing = false;
+
     break;
   }
   case WM_PAINT: {
