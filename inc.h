@@ -1,5 +1,8 @@
 #include <assert.h>
+#include <math.h>
 #include <stdint.h>
+
+#define PI 3.14159265359f
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;

@@ -25,6 +25,18 @@ struct win64_window_dimension {
   int height;
 };
 
+struct win64_sound_output {
+  uint32 runingSampleIndex; // 索引
+  int samplesPerSecond;     // 赫兹
+  int toneVolume;           // 音高
+  int toneHz;               // 一秒钟震动次数
+  int wavePeroid;           // 每秒采样数
+  int bytesPerSample;       // 双声道，左右各16比特，2字节
+  int DSoundBufferSize;     // 缓冲区大小
+  float sint;               // 余弦对应的周期
+  int latencySampleCount;   // 声音延迟
+};
+
 // 优雅降级
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
 typedef X_INPUT_GET_STATE(x_input_get_state);
@@ -88,7 +100,11 @@ static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 buffe
       0,
       &waveFormat,
   };
-  if (FAILED(directSound->CreateSoundBuffer(&secondaryBufferDescription, &globalDSoundBuffer, 0))) return;
+
+  HRESULT result = (directSound->CreateSoundBuffer(&secondaryBufferDescription, &globalDSoundBuffer, 0));
+  if (FAILED(result)) {
+    // TODO 错误处理
+  }
 }
 
 // 初始化手柄控制器API
@@ -106,6 +122,8 @@ static win64_window_dimension getWindowDimension(HWND window);
 static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset, int yOffset);
 static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
 static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
+// 填充音频缓冲区
+static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite);
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -134,18 +152,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   HDC deviceContext = GetDC(window);
   win64ResizeDIBSection(&globalBackBuffer, 1280, 720);
 
-  // 声音 方波
-  constexpr int samplesPerSecond = 48000;
-  constexpr int toneVolume = 3000;
-  constexpr int toneHz = 256;                                // 一秒钟震动次数
-  constexpr int squareWavePeroid = samplesPerSecond / 256;   // 每秒采样数
-  constexpr int halfSquareWavePeroid = squareWavePeroid / 2; // 方形波上下一半的周期
-  constexpr int bytesPerSample = sizeof(int16) * 2;          // 双声道，左右各16比特，2字节
-  constexpr int DSoundBufferSize = samplesPerSecond * bytesPerSample;
-
-  uint32 runingSampleIndex = 0;
-  bool soundPlaying = true;
-  win64LoadInitDSound(window, samplesPerSecond, DSoundBufferSize);
+  win64_sound_output soundOutput = {
+      0,
+      48000,
+      3000,
+      256,
+      soundOutput.samplesPerSecond / 256,
+      sizeof(int16) * 2,
+      soundOutput.samplesPerSecond * soundOutput.bytesPerSample,
+      0.f,
+      soundOutput.samplesPerSecond / 15,
+  };
+  win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
+  // 初始化音频缓冲区并播放音频
+  win64FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
+  globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
   // 图形
   int xOffset = 0;
@@ -184,13 +205,24 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         bool X = pad->wButtons & XINPUT_GAMEPAD_X;
         bool Y = pad->wButtons & XINPUT_GAMEPAD_Y;
 
+        int16 stickX = pad->sThumbRX;
+        int16 stickY = pad->sThumbRY;
+
+        // TODO 处理控制器死区 XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
+        xOffset += stickX / 4096;
+        yOffset += stickY / 4096;
+
         if (A) yOffset += 2;
+
+        soundOutput.toneHz = 256 + (int)(128.f * ((float)stickY / 30000.f));
+        soundOutput.wavePeroid = soundOutput.samplesPerSecond / soundOutput.toneHz;
 
       } else {
         // NOTE The controller is not available
       }
     }
 
+    // 手柄震动
     XINPUT_VIBRATION vibration = {60000, 60000};
     XInputSetState(0, &vibration);
 
@@ -198,59 +230,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     DWORD playCursor;  // 当前播放光标
     DWORD writeCursor; // 可写入光标
-
     if (SUCCEEDED(globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
-      DWORD byteToLock = runingSampleIndex * bytesPerSample % DSoundBufferSize;
-      DWORD bytesToWrite;
-      // 写入区域的两种情况
-      if (byteToLock == playCursor) {
-        bytesToWrite = DSoundBufferSize;
-      } else if (byteToLock > playCursor) {
-        bytesToWrite = DSoundBufferSize - byteToLock + playCursor;
-      } else {
-        bytesToWrite = playCursor - byteToLock;
-      }
+      DWORD byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      DWORD targetCursor =
+          (playCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      DWORD bytesToWrite =
+          byteToLock > targetCursor ? soundOutput.DSoundBufferSize - byteToLock + targetCursor : targetCursor - byteToLock;
 
-      // 加锁获取可写内存指针
-      VOID *region1, *region2;
-      DWORD region1Size, region2Size;
-      if (SUCCEEDED(globalDSoundBuffer->Lock(byteToLock, bytesToWrite,
-                                             &region1, &region1Size,
-                                             &region2, &region2Size,
-                                             0))) {
-
-        int16 *sampleOut = (int16 *)region1;
-        DWORD region1SampleCount = region1Size / bytesPerSample;
-        for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-          // 赫兹/频率/2 取模写入方形波正负能量
-          int16 sampleValue = ((runingSampleIndex++ / halfSquareWavePeroid) & 1) == 0 ? toneVolume : -toneVolume;
-          // 写入左右双声道
-          *sampleOut++ = sampleValue;
-          *sampleOut++ = sampleValue;
-        }
-
-        sampleOut = (int16 *)region2;
-        DWORD region2SampleCount = region2Size / bytesPerSample;
-        for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
-          int16 sampleValue = ((runingSampleIndex++ / halfSquareWavePeroid) & 1) == 0 ? toneVolume : -toneVolume;
-          *sampleOut++ = sampleValue;
-          *sampleOut++ = sampleValue;
-        }
-
-        globalDSoundBuffer->Unlock(region1, region1Size, region2, region2Size);
-      }
-    }
-
-    if (soundPlaying) {
-      globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
-      soundPlaying = false;
+      win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite);
     }
 
     auto [width, height] = getWindowDimension(window);
     win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
     ++xOffset;
-    yOffset += 2;
   }
 
   return 0;
@@ -320,6 +313,47 @@ static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int
   int bitmapMemorySize = (width * height) * buffer->bytesPerPixel;
   buffer->pitch = buffer->width * buffer->bytesPerPixel;
   buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite) {
+  // 加锁获取可写内存指针
+  VOID *region1;
+  VOID *region2;
+  DWORD region1Size;
+  DWORD region2Size;
+  if (FAILED(globalDSoundBuffer->Lock(byteToLock, bytesToWrite,
+                                      &region1, &region1Size,
+                                      &region2, &region2Size,
+                                      0)))
+    return;
+
+  int16 *sampleOut = (int16 *)region1;
+  DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
+  for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+    // 频率改变导致相位错乱，产生噪音
+    // float t = ((float)soundOutput->runingSampleIndex / (float)soundOutput->wavePeroid) * 2.0f * PI;
+    float sineValue = sinf(soundOutput->sint);
+    int16 sampleValue = (int16)(sineValue * soundOutput->toneVolume);
+    // 写入左右双声道
+    *sampleOut++ = sampleValue;
+    *sampleOut++ = sampleValue;
+    // 适应频率改变
+    soundOutput->sint += (PI * 2.0f) / (float)soundOutput->wavePeroid;
+    ++soundOutput->runingSampleIndex;
+  }
+
+  sampleOut = (int16 *)region2;
+  DWORD region2SampleCount = region2Size / soundOutput->bytesPerSample;
+  for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
+    float sineValue = sinf(soundOutput->sint);
+    int16 sampleValue = (int16)(sineValue * soundOutput->toneVolume);
+    *sampleOut++ = sampleValue;
+    *sampleOut++ = sampleValue;
+    soundOutput->sint += (PI * 2.0f) / (float)soundOutput->wavePeroid;
+    ++soundOutput->runingSampleIndex;
+  }
+
+  globalDSoundBuffer->Unlock(region1, region1Size, region2, region2Size);
 }
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
