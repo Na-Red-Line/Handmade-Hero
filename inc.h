@@ -4,7 +4,6 @@
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #define PI 3.14159265359f
 
@@ -24,8 +23,17 @@ struct game_offscreen_buffer {
   int width;
   int height;
   int bytesPerPixel;
+  int xOffset;
+  int yOffset;
 };
 
-void renderWeirGradient(game_offscreen_buffer buffer, int xOffset, int yOffset);
+struct game_sound_output_buffer {
+  void *buffer;   // 缓冲区
+  int bufferSize; // 缓冲区大小
+  int toneVolume; // 音高
+  int wavePeroid; // 每秒采样数
+};
+
+void gameUpdateAndRender(game_offscreen_buffer offscreen_buffer, game_sound_output_buffer sound_output_buffer);
 
 #endif

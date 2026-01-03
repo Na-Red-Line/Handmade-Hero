@@ -121,8 +121,8 @@ static void win64LoadXInput() {
 static win64_window_dimension getWindowDimension(HWND window);
 static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
 static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
-// 填充音频缓冲区
-static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite);
+static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
+static void win64CleanSoundBuffer(win64_sound_output *soundOutput);
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
@@ -146,11 +146,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 0);
   if (!window) return 0;
 
-  LARGE_INTEGER lpFrequency;
-  QueryPerformanceFrequency(&lpFrequency);
-  // 每秒计数器递增的次数
-  LONGLONG perfCountFrequency = lpFrequency.QuadPart;
-
   win64LoadXInput();
 
   HDC deviceContext = GetDC(window);
@@ -168,21 +163,28 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       soundOutput.samplesPerSecond / 15,
   };
   win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
-  // 初始化音频缓冲区并播放音频
-  win64FillSoundBuffer(&soundOutput, 0, soundOutput.latencySampleCount * soundOutput.bytesPerSample);
+  win64CleanSoundBuffer(&soundOutput);
   globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
   // 图形
   int xOffset = 0;
   int yOffset = 0;
 
+  int16 *samples = (int16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
   global_runing = true;
+
+#if 0
+  LARGE_INTEGER lpFrequency;
+  QueryPerformanceFrequency(&lpFrequency);
+  // 每秒计数器递增的次数
+  LONGLONG perfCountFrequency = lpFrequency.QuadPart;
 
   // 计数器刻度数
   LARGE_INTEGER lastCounter;
   QueryPerformanceCounter(&lastCounter);
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
+#endif
 
   while (global_runing) {
     MSG msg;
@@ -235,30 +237,44 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       }
     }
 
+#if 0
     // 手柄震动
     XINPUT_VIBRATION vibration = {60000, 60000};
     XInputSetState(0, &vibration);
+#endif
+
+    DWORD playCursor;  // 当前播放光标
+    DWORD writeCursor; // 可写入光标
+    DWORD byteToLock;
+    DWORD bytesToWrite;
+    bool soundIsValid;
+    if (SUCCEEDED(globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
+      byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      DWORD targetCursor =
+          (playCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      bytesToWrite =
+          byteToLock > targetCursor ? soundOutput.DSoundBufferSize - byteToLock + targetCursor : targetCursor - byteToLock;
+      soundIsValid = true;
+    }
 
     game_offscreen_buffer offscreen_buffer = {
         globalBackBuffer.memory,
         globalBackBuffer.width,
         globalBackBuffer.height,
         globalBackBuffer.bytesPerPixel,
+        xOffset,
+        yOffset,
     };
-    renderWeirGradient(offscreen_buffer, xOffset, yOffset);
 
-    DWORD playCursor;  // 当前播放光标
-    DWORD writeCursor; // 可写入光标
-    if (SUCCEEDED(globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
-      DWORD byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
-      DWORD targetCursor =
-          (playCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
-      DWORD bytesToWrite =
-          byteToLock > targetCursor ? soundOutput.DSoundBufferSize - byteToLock + targetCursor : targetCursor - byteToLock;
+    game_sound_output_buffer sound_output_buffer = {
+        (void *)samples,
+        (int)(bytesToWrite / soundOutput.bytesPerSample),
+        soundOutput.toneVolume,
+        soundOutput.wavePeroid,
+    };
+    gameUpdateAndRender(offscreen_buffer, sound_output_buffer);
 
-      win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite);
-    }
-
+    if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
     auto [width, height] = getWindowDimension(window);
     win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
@@ -335,7 +351,21 @@ static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int
   buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
-static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite) {
+static void win64CleanSoundBuffer(win64_sound_output *soundOutput) {
+  VOID *ptr1;
+  VOID *ptr2;
+  DWORD ptr1Size;
+  DWORD ptr2Size;
+  DWORD bytes = soundOutput->DSoundBufferSize;
+  if (FAILED(globalDSoundBuffer->Lock(0, bytes, &ptr1, &ptr1Size, &ptr2, &ptr2Size, 0))) return;
+
+  memset(ptr1, 0, ptr1Size);
+  memset(ptr2, 0, ptr2Size);
+
+  globalDSoundBuffer->Unlock(ptr1, ptr1Size, ptr2, ptr2Size);
+}
+
+static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer) {
   // 加锁获取可写内存指针
   VOID *region1;
   VOID *region2;
@@ -347,29 +377,20 @@ static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLo
                                       0)))
     return;
 
+  int16 *buffer = (int16 *)sound_output_buffer->buffer;
   int16 *sampleOut = (int16 *)region1;
   DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
   for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-    // 频率改变导致相位错乱，产生噪音
-    // float t = ((float)soundOutput->runingSampleIndex / (float)soundOutput->wavePeroid) * 2.0f * PI;
-    float sineValue = sinf(soundOutput->sint);
-    int16 sampleValue = (int16)(sineValue * soundOutput->toneVolume);
-    // 写入左右双声道
-    *sampleOut++ = sampleValue;
-    *sampleOut++ = sampleValue;
-    // 适应频率改变
-    soundOutput->sint += (PI * 2.0f) / (float)soundOutput->wavePeroid;
+    *sampleOut++ = *buffer++;
+    *sampleOut++ = *buffer++;
     ++soundOutput->runingSampleIndex;
   }
 
   sampleOut = (int16 *)region2;
   DWORD region2SampleCount = region2Size / soundOutput->bytesPerSample;
   for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
-    float sineValue = sinf(soundOutput->sint);
-    int16 sampleValue = (int16)(sineValue * soundOutput->toneVolume);
-    *sampleOut++ = sampleValue;
-    *sampleOut++ = sampleValue;
-    soundOutput->sint += (PI * 2.0f) / (float)soundOutput->wavePeroid;
+    *sampleOut++ = *buffer++;
+    *sampleOut++ = *buffer++;
     ++soundOutput->runingSampleIndex;
   }
 
