@@ -147,6 +147,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 0);
   if (!window) return 0;
 
+  LARGE_INTEGER lpFrequency;
+  QueryPerformanceFrequency(&lpFrequency);
+  // 每秒计数器递增的次数
+  LONGLONG perfCountFrequency = lpFrequency.QuadPart;
+
   win64LoadXInput();
 
   HDC deviceContext = GetDC(window);
@@ -173,6 +178,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   int yOffset = 0;
 
   global_runing = true;
+
+  // 计数器刻度数
+  LARGE_INTEGER lastCounter;
+  QueryPerformanceCounter(&lastCounter);
+  // CPU命令计数器
+  uint64 lastCycleCount = __rdtsc();
+
   while (global_runing) {
     MSG msg;
     while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
@@ -244,6 +256,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
     ++xOffset;
+
+    uint64 endCycleCount = __rdtsc();
+    uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
+
+    LARGE_INTEGER endCounter;
+    QueryPerformanceCounter(&endCounter);
+    // 一帧循环所经过的计数器刻度数
+    uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
+    // 计算一帧循环耗时毫秒数
+    float MSPerFrame = (float)counterElapsed * 1000.f / (float)perfCountFrequency;
+    // FPS = 每秒计数器递增的次数 / 一帧循环所经过的计数器刻度数
+    uint64 FPS = perfCountFrequency / counterElapsed;
+    // 一帧CPU执行了多少万条指令
+    float MCPF = (float)cycleCounterElapsed / 10000.f;
+
+    char buffer[256] = {0};
+    sprintf(buffer, "MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
+    OutputDebugStringA(buffer);
+
+    lastCounter = endCounter;
+    lastCycleCount = endCycleCount;
   }
 
   return 0;
