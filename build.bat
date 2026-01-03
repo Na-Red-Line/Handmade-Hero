@@ -6,6 +6,9 @@ if exist build\debug rmdir /s /q build\debug
 mkdir build\debug
 pushd build\debug
 
-clang -std=gnu++20 -g -fno-exceptions -o win64HandmadeHero.exe ../../win64HandmadeHero.cc %LIBS%
+set SOURCES=
+for %%f in (..\..\*.cc) do call set SOURCES=%%SOURCES%% %%f
+
+clang -std=gnu++20 -g -fno-exceptions -o HandmadeHero.exe %SOURCES% %LIBS%
 
 popd

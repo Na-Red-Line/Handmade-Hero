@@ -1,3 +1,6 @@
+#ifndef INC_H
+#define INC_H
+
 #include <assert.h>
 #include <math.h>
 #include <stdint.h>
@@ -15,4 +18,14 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 
-typedef int32 bool32;
+// 更新屏幕渲染
+struct game_offscreen_buffer {
+  void *memory;
+  int width;
+  int height;
+  int bytesPerPixel;
+};
+
+void renderWeirGradient(game_offscreen_buffer buffer, int xOffset, int yOffset);
+
+#endif

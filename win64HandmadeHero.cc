@@ -119,7 +119,6 @@ static void win64LoadXInput() {
 }
 
 static win64_window_dimension getWindowDimension(HWND window);
-static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset, int yOffset);
 static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
 static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
 // 填充音频缓冲区
@@ -221,10 +220,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         int16 stickY = pad->sThumbRY;
 
         // TODO 处理控制器死区 XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
-        xOffset += stickX / 4096;
-        yOffset += stickY / 4096;
+
+        xOffset += stickX / 10000;
+        yOffset += stickY / 10000;
 
         if (A) yOffset += 2;
+        if (B) global_runing = false;
 
         soundOutput.toneHz = 256 + (int)(128.f * ((float)stickY / 30000.f));
         soundOutput.wavePeroid = soundOutput.samplesPerSecond / soundOutput.toneHz;
@@ -238,7 +239,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     XINPUT_VIBRATION vibration = {60000, 60000};
     XInputSetState(0, &vibration);
 
-    win64RenderWeirGradient(&globalBackBuffer, xOffset, yOffset);
+    game_offscreen_buffer offscreen_buffer = {
+        globalBackBuffer.memory,
+        globalBackBuffer.width,
+        globalBackBuffer.height,
+        globalBackBuffer.bytesPerPixel,
+    };
+    renderWeirGradient(offscreen_buffer, xOffset, yOffset);
 
     DWORD playCursor;  // 当前播放光标
     DWORD writeCursor; // 可写入光标
@@ -255,8 +262,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     auto [width, height] = getWindowDimension(window);
     win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
-    ++xOffset;
-
+#if 0
     uint64 endCycleCount = __rdtsc();
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
 
@@ -277,6 +283,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     lastCounter = endCounter;
     lastCycleCount = endCycleCount;
+#endif
   }
 
   return 0;
@@ -291,26 +298,6 @@ static win64_window_dimension getWindowDimension(HWND window) {
   result.height = clientRect.bottom - clientRect.top;
 
   return result;
-}
-
-static void win64RenderWeirGradient(win64_offscreen_buffer *buffer, int xOffset, int yOffset) {
-  int w = buffer->width;
-  int h = buffer->height;
-
-  uint8 *row = (uint8 *)buffer->memory;
-  for (int y = 0; y < h; ++y) {
-    uint32 *pixel = (uint32 *)row;
-    for (int x = 0; x < w; ++x) {
-      // memory order: RR GG BB xx
-      // loaded in:    xx BB GG RR
-      // window:       xx RR GG BB
-      // memory order: BB GG RR xx
-      uint8 blue = x + xOffset;
-      uint8 green = y + yOffset;
-      *pixel++ = ((green << 8) | blue);
-    }
-    row += buffer->pitch;
-  }
 }
 
 static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer,
@@ -437,7 +424,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     } else {
     }
 
-    bool32 altKeyWasDown = lParam & (1 << 29); // 按住了ALT
+    int32 altKeyWasDown = lParam & (1 << 29); // 按住了ALT
     if (VKCode == VK_F4 && altKeyWasDown) global_runing = false;
 
     break;
