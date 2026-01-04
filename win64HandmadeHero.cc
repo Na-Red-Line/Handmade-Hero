@@ -33,7 +33,6 @@ struct win64_sound_output {
   int wavePeroid;           // 每秒采样数
   int bytesPerSample;       // 双声道，左右各16比特，2字节
   int DSoundBufferSize;     // 缓冲区大小
-  float sint;               // 余弦对应的周期
   int latencySampleCount;   // 声音延迟
 };
 
@@ -151,17 +150,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   HDC deviceContext = GetDC(window);
   win64ResizeDIBSection(&globalBackBuffer, 1280, 720);
 
-  win64_sound_output soundOutput = {
-      0,
-      48000,
-      3000,
-      256,
-      soundOutput.samplesPerSecond / 256,
-      sizeof(int16) * 2,
-      soundOutput.samplesPerSecond * soundOutput.bytesPerSample,
-      0.f,
-      soundOutput.samplesPerSecond / 15,
-  };
+  win64_sound_output soundOutput = {};
+  soundOutput.runingSampleIndex = 0;
+  soundOutput.samplesPerSecond = 48000;
+  soundOutput.toneVolume = 3000;
+  soundOutput.toneHz = 256;
+  soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
+  soundOutput.bytesPerSample = sizeof(int16) * 2;
+  soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
+  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 15;
+
   win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   win64CleanSoundBuffer(&soundOutput);
   globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
@@ -257,21 +255,20 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       soundIsValid = true;
     }
 
-    game_offscreen_buffer offscreen_buffer = {
-        globalBackBuffer.memory,
-        globalBackBuffer.width,
-        globalBackBuffer.height,
-        globalBackBuffer.bytesPerPixel,
-        xOffset,
-        yOffset,
-    };
+    game_offscreen_buffer offscreen_buffer = {};
+    offscreen_buffer.memory = globalBackBuffer.memory;
+    offscreen_buffer.width = globalBackBuffer.width;
+    offscreen_buffer.height = globalBackBuffer.height;
+    offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
+    offscreen_buffer.xOffset = xOffset;
+    offscreen_buffer.yOffset = yOffset;
 
-    game_sound_output_buffer sound_output_buffer = {
-        (void *)samples,
-        (int)(bytesToWrite / soundOutput.bytesPerSample),
-        soundOutput.toneVolume,
-        soundOutput.wavePeroid,
-    };
+    game_sound_output_buffer sound_output_buffer = {};
+    sound_output_buffer.buffer = (void *)samples;
+    sound_output_buffer.bufferSize = (int)(bytesToWrite / soundOutput.bytesPerSample);
+    sound_output_buffer.toneVolume = soundOutput.toneVolume;
+    sound_output_buffer.wavePeroid = soundOutput.wavePeroid;
+
     gameUpdateAndRender(offscreen_buffer, sound_output_buffer);
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);

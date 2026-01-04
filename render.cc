@@ -1,32 +1,23 @@
 #include "inc.h"
 
 void game_output_sound(game_sound_output_buffer sound_output_buffer) {
+  // 余弦x轴坐标
   static float tSine = 0;
 
-  auto [buffer,
-        bufferSize,
-        toneVolume,
-        wavePeroid] = sound_output_buffer;
-
-  int16 *sampleOut = (int16 *)buffer;
-  for (int sampleIndex = 0; sampleIndex < bufferSize; ++sampleIndex) {
-    float sineValue = sinf(tSine);
-    int sampleValue = sineValue * toneVolume;
+  int16 *sampleOut = (int16 *)sound_output_buffer.buffer;
+  for (int sampleIndex = 0; sampleIndex < sound_output_buffer.bufferSize; ++sampleIndex) {
+    float sineValue = sinf(tSine); // 余弦y轴坐标
+    int sampleValue = sineValue * sound_output_buffer.toneVolume;
     // 写入左右双声道
     *sampleOut++ = sampleValue;
     *sampleOut++ = sampleValue;
     // 适应频率改变
-    tSine += (PI * 2.0f) / (float)wavePeroid;
+    tSine += (PI * 2.0f) / (float)sound_output_buffer.wavePeroid;
   }
 }
 
 void renderWeirGradient(game_offscreen_buffer buffer) {
-  auto [memory,
-        width,
-        height,
-        bytesPerPixel,
-        xOffset,
-        yOffset] = buffer;
+  auto [memory, width, height, bytesPerPixel, xOffset, yOffset] = buffer;
 
   uint8 *row = (uint8 *)memory;
   int pitch = width * bytesPerPixel;

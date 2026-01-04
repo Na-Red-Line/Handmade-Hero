@@ -1,14 +1,19 @@
 @echo off
 
-set LIBS=-luser32 -lgdi32 -lXinput
-
 if exist build\debug rmdir /s /q build\debug
 mkdir build\debug
+
+set DBG=
+if "%1"=="debug" set DBG=-g -gcodeview -O0
+
+set CXXFLAGS=-std=gnu++20 -fno-exceptions
+
+set LIBS=-luser32 -lgdi32 -lXinput
+
+powershell -Command "ls '*.cc' -Recurse | %% { '\"' + ($_.FullName -replace '\\', '/') + '\"' }" > build/debug/sources.rsp
+
 pushd build\debug
 
-set SOURCES=
-for %%f in (..\..\*.cc) do call set SOURCES=%%SOURCES%% %%f
-
-clang -std=gnu++20 -g -fno-exceptions -o HandmadeHero.exe %SOURCES% %LIBS%
+clang %CXXFLAGS% %DBG% -o HandmadeHero.exe @sources.rsp %LIBS%
 
 popd
