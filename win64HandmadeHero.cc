@@ -2,39 +2,11 @@
 #define UNICODE
 #endif
 
-#include "inc.h"
-#include <dsound.h>
-#include <windows.h>
-#include <xinput.h>
-
-struct win64_offscreen_buffer {
-  BITMAPINFO info;
-  VOID *memory;
-  int width;
-  int height;
-  int bytesPerPixel = 4;
-  int pitch;
-};
+#include "windows.h"
 
 static bool global_runing;
 static win64_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
-
-struct win64_window_dimension {
-  int width;
-  int height;
-};
-
-struct win64_sound_output {
-  uint32 runingSampleIndex; // 索引
-  int samplesPerSecond;     // 赫兹
-  int toneVolume;           // 音高
-  int toneHz;               // 一秒钟震动次数
-  int wavePeroid;           // 每秒采样数
-  int bytesPerSample;       // 双声道，左右各16比特，2字节
-  int DSoundBufferSize;     // 缓冲区大小
-  int latencySampleCount;   // 声音延迟
-};
 
 // 优雅降级
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
@@ -123,6 +95,11 @@ static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC devic
 static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
 static void win64CleanSoundBuffer(win64_sound_output *soundOutput);
 
+static void win64ProcessXInputDigitalButton(game_button_state *newState, game_button_state *oldState, WORD wButtons, DWORD buttonBit) {
+  newState->endDown = (wButtons & buttonBit) == buttonBit;
+  newState->halfTransitionCount = newState->endDown != oldState->endDown;
+}
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, int showCode) {
@@ -164,11 +141,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   win64CleanSoundBuffer(&soundOutput);
   globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
-  // 图形
-  int xOffset = 0;
-  int yOffset = 0;
-
   int16 *samples = (int16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+  game_input input[2] = {};
+  game_input *newInput = &input[0];
+  game_input *oldInput = &input[1];
+
   global_runing = true;
 
 #if 0
@@ -193,13 +171,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       DispatchMessageA(&msg);
     }
 
-    DWORD dwResult;
-    for (DWORD i = 0; i < XUSER_MAX_COUNT; i++) {
+    int maxControllerCount = max(arr_length(input->controller), XUSER_MAX_COUNT);
+    for (DWORD i = 0; i < maxControllerCount; i++) {
+      game_controller_input *oldController = &newInput->controller[i];
+      game_controller_input *newController = &oldInput->controller[i];
+
       XINPUT_STATE state;
       ZeroMemory(&state, sizeof(XINPUT_STATE));
 
       // Simply get the state of the controller from XInput.
-      dwResult = XInputGetState(i, &state);
+      DWORD dwResult = XInputGetState(i, &state);
 
       if (dwResult == ERROR_SUCCESS) {
         XINPUT_GAMEPAD *pad = &state.Gamepad;
@@ -209,26 +190,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         bool left = pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
         bool right = pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
         bool start = pad->wButtons & XINPUT_GAMEPAD_START;
-        bool leftShoulder = pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER;
-        bool rightShoulder = pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER;
-        bool A = pad->wButtons & XINPUT_GAMEPAD_A;
-        bool B = pad->wButtons & XINPUT_GAMEPAD_B;
-        bool X = pad->wButtons & XINPUT_GAMEPAD_X;
-        bool Y = pad->wButtons & XINPUT_GAMEPAD_Y;
 
-        int16 stickX = pad->sThumbRX;
-        int16 stickY = pad->sThumbRY;
+        win64ProcessXInputDigitalButton(&oldController->down, &oldController->down, pad->wButtons, XINPUT_GAMEPAD_A);
+        win64ProcessXInputDigitalButton(&oldController->right, &oldController->right, pad->wButtons, XINPUT_GAMEPAD_B);
+        win64ProcessXInputDigitalButton(&oldController->left, &oldController->left, pad->wButtons, XINPUT_GAMEPAD_X);
+        win64ProcessXInputDigitalButton(&oldController->up, &oldController->up, pad->wButtons, XINPUT_GAMEPAD_Y);
+        win64ProcessXInputDigitalButton(&oldController->leftShoulder, &oldController->leftShoulder, pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER);
+        win64ProcessXInputDigitalButton(&oldController->rightShoulder, &oldController->rightShoulder, pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
+        newInput->controller[i].isAnalog = true;
+        newInput->controller[i].EndX = (float)pad->sThumbRX / 32767.f;
+        newInput->controller[i].EndY = (float)pad->sThumbRX / 32767.f;
+        newInput->controller[i].minX = min(newInput->controller[i].minX, oldInput->controller[i].minX);
+        newInput->controller[i].minY = min(newInput->controller[i].minY, oldInput->controller[i].minY);
 
         // TODO 处理控制器死区 XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
-
-        xOffset += stickX / 10000;
-        yOffset += stickY / 10000;
-
-        if (A) yOffset += 2;
-        if (B) global_runing = false;
-
-        soundOutput.toneHz = 256 + (int)(128.f * ((float)stickY / 30000.f));
-        soundOutput.wavePeroid = soundOutput.samplesPerSecond / soundOutput.toneHz;
+        int16 stickX = pad->sThumbRX;
+        int16 stickY = pad->sThumbRY;
 
       } else {
         // NOTE The controller is not available
@@ -260,16 +238,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.width = globalBackBuffer.width;
     offscreen_buffer.height = globalBackBuffer.height;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
-    offscreen_buffer.xOffset = xOffset;
-    offscreen_buffer.yOffset = yOffset;
 
     game_sound_output_buffer sound_output_buffer = {};
     sound_output_buffer.buffer = (void *)samples;
     sound_output_buffer.bufferSize = (int)(bytesToWrite / soundOutput.bytesPerSample);
+    sound_output_buffer.samplesPerSecond = soundOutput.samplesPerSecond;
     sound_output_buffer.toneVolume = soundOutput.toneVolume;
-    sound_output_buffer.wavePeroid = soundOutput.wavePeroid;
 
-    gameUpdateAndRender(offscreen_buffer, sound_output_buffer);
+    gameUpdateAndRender(newInput, offscreen_buffer, sound_output_buffer);
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
     auto [width, height] = getWindowDimension(window);
@@ -297,6 +273,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     lastCounter = endCounter;
     lastCycleCount = endCycleCount;
 #endif
+
+    game_input *temp = newInput;
+    newInput = oldInput;
+    oldInput = temp;
   }
 
   return 0;

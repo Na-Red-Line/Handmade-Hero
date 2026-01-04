@@ -17,23 +17,58 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 
+template <typename T, int N>
+consteval int arr_length(T (&arr)[N]) { return N; }
+
 // 更新屏幕渲染
 struct game_offscreen_buffer {
   void *memory;
   int width;
   int height;
   int bytesPerPixel;
-  int xOffset;
-  int yOffset;
 };
 
 struct game_sound_output_buffer {
-  void *buffer;   // 缓冲区
-  int bufferSize; // 缓冲区大小
-  int toneVolume; // 音高
-  int wavePeroid; // 每秒采样数
+  void *buffer;         // 缓冲区
+  int bufferSize;       // 缓冲区大小
+  int samplesPerSecond; // 赫兹
+  int toneVolume;       // 音高
 };
 
-void gameUpdateAndRender(game_offscreen_buffer offscreen_buffer, game_sound_output_buffer sound_output_buffer);
+struct game_button_state {
+  int halfTransitionCount;
+  int32 endDown;
+};
+
+struct game_controller_input {
+  bool isAnalog;
+
+  float startX;
+  float startY;
+
+  float minX;
+  float minY;
+
+  float EndX;
+  float EndY;
+
+  union {
+    game_button_state Button[6];
+    struct {
+      game_button_state up;
+      game_button_state down;
+      game_button_state left;
+      game_button_state right;
+      game_button_state leftShoulder;
+      game_button_state rightShoulder;
+    };
+  };
+};
+
+struct game_input {
+  game_controller_input controller[4];
+};
+
+void gameUpdateAndRender(game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer);
 
 #endif
