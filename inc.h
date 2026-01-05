@@ -1,5 +1,4 @@
-#ifndef INC_H
-#define INC_H
+#pragma once
 
 #include <assert.h>
 #include <math.h>
@@ -19,6 +18,11 @@ typedef int64_t int64;
 
 template <typename T, int N>
 consteval int arr_length(T (&arr)[N]) { return N; }
+
+consteval uint64 KiloBytes(int x) { return x << 10; }
+consteval uint64 MegaBytes(int x) { return KiloBytes(x) << 10; }
+consteval uint64 GigaBytes(int x) { return MegaBytes(x) << 10; }
+consteval uint64 TeraBytes(int x) { return GigaBytes(x) << 10; }
 
 // 更新屏幕渲染
 struct game_offscreen_buffer {
@@ -69,6 +73,16 @@ struct game_input {
   game_controller_input controller[4];
 };
 
-void gameUpdateAndRender(game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer);
+struct game_state {
+  int blueOffset;
+  int greenOffset;
+  int toneHz;
+};
 
-#endif
+struct game_memory {
+  bool isInitialized;
+  uint64 permanentStorageSize;
+  void *permanentStorage;
+};
+
+void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer);

@@ -143,6 +143,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
   int16 *samples = (int16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
+  game_memory gameMemory = {};
+  gameMemory.isInitialized = false;
+  gameMemory.permanentStorageSize = GigaBytes(4);
+  gameMemory.permanentStorage = VirtualAlloc(0, gameMemory.permanentStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
+  if (!samples || !gameMemory.permanentStorage) {
+    // TODO 分配失败
+  }
+
   game_input input[2] = {};
   game_input *newInput = &input[0];
   game_input *oldInput = &input[1];
@@ -200,7 +209,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
         newInput->controller[i].isAnalog = true;
         newInput->controller[i].EndX = (float)pad->sThumbRX / 32767.f;
-        newInput->controller[i].EndY = (float)pad->sThumbRX / 32767.f;
+        newInput->controller[i].EndY = (float)pad->sThumbRY / 32767.f;
         newInput->controller[i].minX = min(newInput->controller[i].minX, oldInput->controller[i].minX);
         newInput->controller[i].minY = min(newInput->controller[i].minY, oldInput->controller[i].minY);
 
@@ -245,7 +254,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     sound_output_buffer.samplesPerSecond = soundOutput.samplesPerSecond;
     sound_output_buffer.toneVolume = soundOutput.toneVolume;
 
-    gameUpdateAndRender(newInput, offscreen_buffer, sound_output_buffer);
+    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer, sound_output_buffer);
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
     auto [width, height] = getWindowDimension(window);

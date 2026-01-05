@@ -39,25 +39,29 @@ void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, i
   }
 }
 
-void gameUpdateAndRender(game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer) {
-  static int blueOffset = 0;
-  static int greenOffset = 0;
-  static int toneHz = 256;
+void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer) {
+  assert(sizeof(game_state) <= memory->permanentStorageSize);
+  game_state *gameState = (game_state *)memory->permanentStorage;
+
+  if (!memory->isInitialized) {
+    gameState->toneHz = 256;
+    memory->isInitialized = true;
+  }
 
   game_controller_input *input0 = gameInput->controller;
   if (input0) {
     if (input0->isAnalog) {
-      toneHz = 256 + (int)(128.f * input0->EndX);
-      blueOffset += (int)(4.f * input0->EndY);
+      gameState->toneHz = 256 + (int)(128.f * input0->EndX);
+      gameState->blueOffset += (int)(4.f * input0->EndY);
     } else {
       // TODO 其他操作
     }
 
     if (input0->down.endDown) {
-      greenOffset += 1;
+      gameState->greenOffset += 1;
     }
   }
 
-  game_output_sound(soundOutputBuffer, toneHz);
-  renderWeirGradient(offscreenBuffer, blueOffset, greenOffset);
+  game_output_sound(soundOutputBuffer, gameState->toneHz);
+  renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
 }
