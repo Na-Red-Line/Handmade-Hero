@@ -27,6 +27,54 @@ DIRECT_SOUND_CREATE(directSoundCreate) { return 0; }
 static direct_sound_create *DirectSoundCreate_ = directSoundCreate;
 #define DirectSoundCreate DirectSoundCreate_
 
+void DEBUGPlatformFreeMemory(void *memory) {
+  if (memory) VirtualFree(memory, 0, 0);
+}
+
+debug_read_file_result DEBUGPlatformReadFile(char *filename) {
+  debug_read_file_result result = {0, nullptr};
+  HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+  if (fileHandle == INVALID_HANDLE_VALUE) return result;
+
+  LARGE_INTEGER fileSize;
+  if (!GetFileSizeEx(fileHandle, &fileSize)) return result;
+
+  result.memory = VirtualAlloc(0, fileSize.QuadPart, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!result.memory) {
+    // TODO 读取文件内存分配失败
+  }
+
+  DWORD bytesRead;
+  result.fileSize = saveCastUint64(fileSize.QuadPart);
+  if (ReadFile(fileHandle, result.memory, result.fileSize, &bytesRead, 0) && result.fileSize == bytesRead) {
+    // NOTE 读取成功
+  } else {
+    DEBUGPlatformFreeMemory(result.memory);
+    result.memory = nullptr;
+  }
+
+  CloseHandle(fileHandle);
+  return result;
+}
+
+bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memory) {
+  bool result = false;
+
+  HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+  if (fileHandle == INVALID_HANDLE_VALUE) return result;
+
+  DWORD bytesRead;
+  if (WriteFile(fileHandle, memory, memorySize, &bytesRead, 0)) {
+    // NOTE 写入成功
+    result = bytesRead == memorySize;
+  } else {
+    // TODO logging
+  }
+
+  CloseHandle(fileHandle);
+  return result;
+}
+
 // 初始化音频API
 static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
   // Load the dsound library
@@ -216,6 +264,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         // TODO 处理控制器死区 XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
         int16 stickX = pad->sThumbRX;
         int16 stickY = pad->sThumbRY;
+
+        bool B = pad->wButtons & XINPUT_GAMEPAD_B;
+        if (B) global_runing = false;
 
       } else {
         // NOTE The controller is not available

@@ -4,7 +4,7 @@
 #include <math.h>
 #include <stdint.h>
 
-#define PI 3.14159265359f
+constexpr float PI = 3.14159265359f;
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;
@@ -23,6 +23,23 @@ consteval uint64 KiloBytes(int x) { return x << 10; }
 consteval uint64 MegaBytes(int x) { return KiloBytes(x) << 10; }
 consteval uint64 GigaBytes(int x) { return MegaBytes(x) << 10; }
 consteval uint64 TeraBytes(int x) { return GigaBytes(x) << 10; }
+
+constexpr uint32 saveCastUint64(uint64 value) {
+  assert(value <= 0xffffffff);
+  return (uint32)(value);
+}
+
+#ifdef HANDMADE_INTERNAL
+// IMPORT 测试使用
+
+struct debug_read_file_result {
+  uint32 fileSize;
+  void *memory;
+};
+debug_read_file_result DEBUGPlatformReadFile(char *filename);
+void DEBUGPlatformFreeMemory(void *memory);
+bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memory);
+#endif
 
 // 更新屏幕渲染
 struct game_offscreen_buffer {

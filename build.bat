@@ -10,10 +10,12 @@ set CXXFLAGS=-std=gnu++20 -fno-exceptions
 
 set LIBS=-luser32 -lgdi32 -lXinput
 
+set MACRO=-DHANDMADE_INTERNAL
+
 powershell -Command "ls '*.cc' -Recurse | %% { '\"' + ($_.FullName -replace '\\', '/') + '\"' }" > build/debug/sources.rsp
 
 pushd build\debug
 
-clang %CXXFLAGS% %DBG% -o HandmadeHero.exe @sources.rsp %LIBS%
+clang %CXXFLAGS% %DBG% -o HandmadeHero.exe @sources.rsp %MACRO% %LIBS%
 
 popd
