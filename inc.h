@@ -17,12 +17,12 @@ typedef int32_t int32;
 typedef int64_t int64;
 
 template <typename T, int N>
-consteval int arr_length(T (&arr)[N]) { return N; }
+consteval int arr_length(T (&)[N]) { return N; }
 
-consteval uint64 KiloBytes(int x) { return x << 10; }
-consteval uint64 MegaBytes(int x) { return KiloBytes(x) << 10; }
-consteval uint64 GigaBytes(int x) { return MegaBytes(x) << 10; }
-consteval uint64 TeraBytes(int x) { return GigaBytes(x) << 10; }
+consteval uint64 KiloBytes(uint64 x) { return x << 10; }
+consteval uint64 MegaBytes(uint64 x) { return KiloBytes(x) << 10; }
+consteval uint64 GigaBytes(uint64 x) { return MegaBytes(x) << 10; }
+consteval uint64 TeraBytes(uint64 x) { return GigaBytes(x) << 10; }
 
 constexpr uint32 saveCastUint64(uint64 value) {
   assert(value <= 0xffffffff);
@@ -62,8 +62,6 @@ struct game_button_state {
 };
 
 struct game_controller_input {
-  bool isAnalog;
-
   float startX;
   float startY;
 
@@ -84,6 +82,8 @@ struct game_controller_input {
       game_button_state rightShoulder;
     };
   };
+
+  bool isAnalog; // 是否是摇杆
 };
 
 struct game_input {
