@@ -148,12 +148,93 @@ static void win64ProcessXInputDigitalButton(game_button_state *newState, game_bu
   newState->halfTransitionCount = newState->endDown != oldState->endDown;
 }
 
-static void win64ProcessKeyboardMessage(game_button_state *newState, game_button_state *oldState, bool isDown) {
+// 更新键盘状态并计算变化数
+static void win64ProcessKeyboardMessage(game_button_state *newState, bool isDown) {
+  // assert(newState->endDown != isDown); TODO 中文输入法拼音异常
   newState->endDown = isDown;
-  newState->halfTransitionCount = newState->endDown != oldState->endDown;
+  ++newState->halfTransitionCount;
 }
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+static void win64ProcessPendingMessage(game_controller_input *keyboardController) {
+  MSG msg;
+  while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
+
+    switch (msg.message) {
+    case WM_QUIT:
+      global_runing = false;
+      break;
+
+    case WM_SYSKEYDOWN: // 系统键按下
+    case WM_SYSKEYUP:   // 系统键释放
+    case WM_KEYDOWN:    // 普通键按下
+    case WM_KEYUP: {    // 普通键释放
+      uint64 VKCode = msg.wParam;
+      boolean wasDown = (msg.lParam & (1 << 30)) != 0; //  之前 按下|松开
+      boolean isDown = (msg.lParam & (1 << 31)) == 0;  // 当前 按下|松开
+
+      // 切换键盘状态才会触发相关事件
+      if (wasDown != isDown) {
+        if (VKCode == 'W') {
+          win64ProcessKeyboardMessage(&keyboardController->moveUp, isDown);
+        } else if (VKCode == 'A') {
+          win64ProcessKeyboardMessage(&keyboardController->moveLeft, isDown);
+        } else if (VKCode == 'S') {
+          win64ProcessKeyboardMessage(&keyboardController->moveDown, isDown);
+        } else if (VKCode == 'D') {
+          win64ProcessKeyboardMessage(&keyboardController->moveRight, isDown);
+        } else if (VKCode == 'Q') {
+          win64ProcessKeyboardMessage(&keyboardController->leftShoulder, isDown);
+        } else if (VKCode == 'E') {
+          win64ProcessKeyboardMessage(&keyboardController->rightShoulder, isDown);
+        } else if (VKCode == VK_UP) {
+          win64ProcessKeyboardMessage(&keyboardController->actionUp, isDown);
+        } else if (VKCode == VK_LEFT) {
+          win64ProcessKeyboardMessage(&keyboardController->actionLeft, isDown);
+        } else if (VKCode == VK_DOWN) {
+          win64ProcessKeyboardMessage(&keyboardController->actionDown, isDown);
+        } else if (VKCode == VK_RIGHT) {
+          win64ProcessKeyboardMessage(&keyboardController->actionRight, isDown);
+        } else if (VKCode == VK_ESCAPE) {
+          win64ProcessKeyboardMessage(&keyboardController->start, isDown);
+        } else if (VKCode == VK_SPACE) {
+          win64ProcessKeyboardMessage(&keyboardController->back, isDown);
+        }
+      }
+
+      // 系统按键 ALT + F4
+      int32 altKeyWasDown = msg.lParam & (1 << 29);
+      if (VKCode == VK_F4 && altKeyWasDown) global_runing = false;
+
+      break;
+    }
+    }
+
+    TranslateMessage(&msg);
+    DispatchMessageA(&msg);
+  }
+}
+
+// 处理手柄摇杆死区
+static float win64ProcessXInputStickValue(float value, float thumbDeadZone) {
+  // 负数最大值
+  float maxNegativeThumb = 32768.0f - thumbDeadZone;
+  // 正数最大值
+  float maxPositiveThumb = 32767.0f - thumbDeadZone;
+  // 摇杆实际数值
+  float stick = value - thumbDeadZone;
+
+  // 数值更平滑
+  if (value < -thumbDeadZone) {
+    return stick / maxNegativeThumb;
+  } else if (value > thumbDeadZone) {
+    return stick / maxPositiveThumb;
+  } else {
+    return 0;
+  }
+}
+
+LRESULT CALLBACK
+WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, int showCode) {
   WNDCLASS wc = {};
@@ -225,110 +306,76 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 #endif
 
   while (global_runing) {
-
-    // 清空控制器状态
+    // 清空键盘控制器状态
     game_controller_input *oldController = &oldInput->controller[0];
     game_controller_input *newController = &newInput->controller[0];
     memset(newController, 0, sizeof(*newController));
-
-    MSG msg;
-    while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
-      if (msg.message == WM_QUIT) global_runing = false;
-
-      TranslateMessage(&msg);
-      DispatchMessageA(&msg);
-
-      switch (msg.message) {
-      case WM_SYSKEYDOWN: // 普通键按下
-      case WM_SYSKEYUP:   // 普通键释放
-      case WM_KEYDOWN:    // 系统键按下
-      case WM_KEYUP: {    // 系统键释放
-        uint32 VKCode = msg.wParam;
-        boolean wasDown = (msg.lParam & (1 << 30)) != 0; //  之前 按下|松开
-        boolean isDown = (msg.lParam & (1 << 31)) == 0;  // 当前 按下|松开
-
-        game_controller_input *oldController = &oldInput->controller[0];
-        game_controller_input *newController = &newInput->controller[0];
-        newController->isAnalog = false;
-
-        if (VKCode == 'W') {
-        } else if (VKCode == 'A') {
-        } else if (VKCode == 'S') {
-        } else if (VKCode == 'D') {
-        } else if (VKCode == 'Q') {
-          win64ProcessKeyboardMessage(&newController->leftShoulder, &oldController->leftShoulder, isDown);
-        } else if (VKCode == 'E') {
-          win64ProcessKeyboardMessage(&newController->rightShoulder, &oldController->rightShoulder, isDown);
-        } else if (VKCode == VK_UP) {
-          win64ProcessKeyboardMessage(&newController->up, &oldController->up, isDown);
-        } else if (VKCode == VK_LEFT) {
-          win64ProcessKeyboardMessage(&newController->left, &oldController->left, isDown);
-        } else if (VKCode == VK_DOWN) {
-          win64ProcessKeyboardMessage(&newController->down, &oldController->down, isDown);
-        } else if (VKCode == VK_RIGHT) {
-          win64ProcessKeyboardMessage(&newController->right, &oldController->right, isDown);
-        } else if (VKCode == VK_ESCAPE) {
-          OutputDebugStringA("VK_ESCAPE: ");
-          if (isDown)
-            OutputDebugStringA("isDown ");
-          if (wasDown)
-            OutputDebugStringA("wasDown ");
-          OutputDebugStringA("\n");
-        } else if (VKCode == VK_SPACE) {
-        } else {
-        }
-
-        int32 altKeyWasDown = msg.lParam & (1 << 29); // 按住了ALT
-        if (VKCode == VK_F4 && altKeyWasDown) global_runing = false;
-
-        break;
-      }
-      }
+    // 维持键盘前一帧的状态
+    for (int buttonIndex = 0; buttonIndex < arr_length(newController->Button); ++buttonIndex) {
+      newController->Button[buttonIndex].endDown = oldController->Button[buttonIndex].endDown;
     }
 
-    int maxControllerCount = max(arr_length(input->controller), XUSER_MAX_COUNT);
-    for (DWORD i = 0; i < maxControllerCount; i++) {
-      game_controller_input *oldController = &oldInput->controller[i];
-      game_controller_input *newController = &newInput->controller[i];
+    win64ProcessPendingMessage(newController);
+    newController->isConnected = true;
 
-      XINPUT_STATE state;
-      ZeroMemory(&state, sizeof(XINPUT_STATE));
+    int minControllerCount = min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
+    // 第零个控制器是键盘
+    for (DWORD i = 0; i < minControllerCount; ++i) {
+      XINPUT_STATE state = {};
 
-      // Simply get the state of the controller from XInput.
-      DWORD dwResult = XInputGetState(i, &state);
+      int controllerIndex = i + 1;
+      game_controller_input *oldController = &oldInput->controller[controllerIndex];
+      game_controller_input *newController = &newInput->controller[controllerIndex];
 
-      if (dwResult == ERROR_SUCCESS) {
-        XINPUT_GAMEPAD *pad = &state.Gamepad;
-
-        bool up = pad->wButtons & XINPUT_GAMEPAD_DPAD_UP;
-        bool down = pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN;
-        bool left = pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT;
-        bool right = pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT;
-        bool start = pad->wButtons & XINPUT_GAMEPAD_START;
-
-        win64ProcessXInputDigitalButton(&newController->down, &oldController->down, pad->wButtons, XINPUT_GAMEPAD_A);
-        win64ProcessXInputDigitalButton(&newController->right, &oldController->right, pad->wButtons, XINPUT_GAMEPAD_B);
-        win64ProcessXInputDigitalButton(&newController->left, &oldController->left, pad->wButtons, XINPUT_GAMEPAD_X);
-        win64ProcessXInputDigitalButton(&newController->up, &oldController->up, pad->wButtons, XINPUT_GAMEPAD_Y);
-        win64ProcessXInputDigitalButton(&newController->leftShoulder, &oldController->leftShoulder, pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER);
-        win64ProcessXInputDigitalButton(&newController->rightShoulder, &oldController->rightShoulder, pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
-
-        newController->isAnalog = true;
-        newController->EndX = (float)pad->sThumbRX / 32767.f;
-        newController->EndY = (float)pad->sThumbRY / 32767.f;
-        newController->minX = min(newController->minX, oldController->minX);
-        newController->minY = min(newController->minY, oldController->minY);
-
-        // TODO 处理控制器死区 XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
-        int16 stickX = pad->sThumbRX;
-        int16 stickY = pad->sThumbRY;
-
-        bool B = pad->wButtons & XINPUT_GAMEPAD_B;
-        if (B) global_runing = false;
-
-      } else {
+      if (XInputGetState(i, &state) != ERROR_SUCCESS) {
         // NOTE The controller is not available
+        newController->isConnected = false;
+        continue;
       }
+
+      XINPUT_GAMEPAD *pad = &state.Gamepad;
+      newController->isAnalog = true;
+
+      // 获取摇杆值
+      newController->stickAverageY = win64ProcessXInputStickValue(pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+      newController->stickAverageX = win64ProcessXInputStickValue(pad->sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+      // 摇杆模拟控制方向键
+      float threshold = 0.5f;
+      if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {
+        newController->stickAverageY = 1.0f;
+        newController->isAnalog = false;
+      }
+      if (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN) {
+        newController->stickAverageY = -1.0f;
+        newController->isAnalog = false;
+      }
+      if (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT) {
+        newController->stickAverageX = -1.0f;
+        newController->isAnalog = false;
+      }
+      if (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT) {
+        newController->stickAverageX = 1.0f;
+        newController->isAnalog = false;
+      }
+
+      win64ProcessXInputDigitalButton(&newController->moveUp, &oldController->moveUp, oldController->stickAverageY > threshold, 1);
+      win64ProcessXInputDigitalButton(&newController->moveDown, &oldController->moveDown, oldController->stickAverageY < -threshold, 1);
+      win64ProcessXInputDigitalButton(&newController->moveLeft, &oldController->moveLeft, oldController->stickAverageX < -threshold, 1);
+      win64ProcessXInputDigitalButton(&newController->moveRight, &oldController->moveRight, oldController->stickAverageX > threshold, 1);
+
+      win64ProcessXInputDigitalButton(&newController->actionUp, &oldController->moveUp, pad->wButtons, XINPUT_GAMEPAD_Y);
+      win64ProcessXInputDigitalButton(&newController->actionDown, &oldController->moveDown, pad->wButtons, XINPUT_GAMEPAD_A);
+      win64ProcessXInputDigitalButton(&newController->actionLeft, &oldController->moveLeft, pad->wButtons, XINPUT_GAMEPAD_X);
+      win64ProcessXInputDigitalButton(&newController->actionRight, &oldController->moveRight, pad->wButtons, XINPUT_GAMEPAD_B);
+
+      win64ProcessXInputDigitalButton(&newController->leftShoulder, &oldController->leftShoulder, pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER);
+      win64ProcessXInputDigitalButton(&newController->rightShoulder, &oldController->rightShoulder, pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
+      win64ProcessXInputDigitalButton(&newController->start, &oldController->start, pad->wButtons, XINPUT_GAMEPAD_START);
+      win64ProcessXInputDigitalButton(&newController->back, &oldController->back, pad->wButtons, XINPUT_GAMEPAD_BACK);
+
+      newController->isConnected = true;
+      if (pad->wButtons & XINPUT_GAMEPAD_B) global_runing = false;
     }
 
 #if 0

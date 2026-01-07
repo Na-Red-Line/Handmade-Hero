@@ -17,7 +17,7 @@ typedef int32_t int32;
 typedef int64_t int64;
 
 template <typename T, int N>
-consteval int arr_length(T (&)[N]) { return N; }
+constexpr int arr_length(T (&)[N]) { return N; }
 
 consteval uint64 KiloBytes(uint64 x) { return x << 10; }
 consteval uint64 MegaBytes(uint64 x) { return KiloBytes(x) << 10; }
@@ -62,32 +62,42 @@ struct game_button_state {
 };
 
 struct game_controller_input {
-  float startX;
-  float startY;
-
-  float minX;
-  float minY;
-
-  float EndX;
-  float EndY;
+  float stickAverageX;
+  float stickAverageY;
 
   union {
-    game_button_state Button[6];
+    game_button_state Button[12];
     struct {
-      game_button_state up;
-      game_button_state down;
-      game_button_state left;
-      game_button_state right;
+      // 移动
+      game_button_state moveUp;
+      game_button_state moveDown;
+      game_button_state moveLeft;
+      game_button_state moveRight;
+
+      // action
+      game_button_state actionUp;
+      game_button_state actionDown;
+      game_button_state actionLeft;
+      game_button_state actionRight;
+
       game_button_state leftShoulder;
       game_button_state rightShoulder;
+
+      game_button_state start;
+      game_button_state back;
+
+      // 分界线，用于边界断言
+      game_button_state terminator;
     };
   };
 
   bool isAnalog; // 是否是摇杆
+  bool isConnected;
 };
 
 struct game_input {
-  game_controller_input controller[4];
+  // 五个控制器，第一个是键盘
+  game_controller_input controller[5];
 };
 
 struct game_state {

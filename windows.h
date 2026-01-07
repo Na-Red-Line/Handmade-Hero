@@ -2,7 +2,7 @@
 
 #include <dsound.h>
 #include <windows.h>
-#include <xinput.h>
+#include <Xinput.h>
 
 struct win64_offscreen_buffer {
   BITMAPINFO info;
