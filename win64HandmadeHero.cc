@@ -2,11 +2,14 @@
 #define UNICODE
 #endif
 
+#include <stdio.h>
 #include "windows.h"
 
 static bool global_runing;
 static win64_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
+// 每秒计数器递增的次数
+static LONGLONG globalPerfCountFrequency;
 
 // 优雅降级
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
@@ -143,6 +146,25 @@ static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC devic
 static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
 static void win64CleanSoundBuffer(win64_sound_output *soundOutput);
 
+static void initPerfCountFrequency() {
+  LARGE_INTEGER lpFrequency;
+  QueryPerformanceFrequency(&lpFrequency);
+  globalPerfCountFrequency = lpFrequency.QuadPart;
+}
+
+static LARGE_INTEGER win64GetWallClock() {
+  LARGE_INTEGER result;
+  QueryPerformanceCounter(&result);
+  return result;
+}
+
+static uint64 win64GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+  uint64 counterElapsed = end.QuadPart - start.QuadPart;
+  uint64 secondsElapsedForWork = (counterElapsed * 1000) / globalPerfCountFrequency;
+  return secondsElapsedForWork;
+}
+
+// 更新手柄按键状态并计算变化数
 static void win64ProcessXInputDigitalButton(game_button_state *newState, game_button_state *oldState, WORD wButtons, DWORD buttonBit) {
   newState->endDown = (wButtons & buttonBit) == buttonBit;
   newState->halfTransitionCount = newState->endDown != oldState->endDown;
@@ -155,6 +177,7 @@ static void win64ProcessKeyboardMessage(game_button_state *newState, bool isDown
   ++newState->halfTransitionCount;
 }
 
+// 处理windows消息
 static void win64ProcessPendingMessage(game_controller_input *keyboardController) {
   MSG msg;
   while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
@@ -255,6 +278,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 instance,
                                 0);
   if (!window) return 0;
+  // 显示器帧数
+  constexpr uint16 monitorRefresHz = 144;
+  // 游戏物理逻辑帧
+  constexpr uint16 gameUpdateHz = 60;
+  // 每帧的时间
+  constexpr uint16 targetElapsedPerFrame = 1000 / gameUpdateHz;
+  // 设置windows调度粒度(ms)用来更精细地控制睡眠
+  constexpr UINT desiredSchedulerMS = 1;
+  bool sleepIsGranular = timeBeginPeriod(desiredSchedulerMS) == TIMERR_STRUCT;
 
   win64LoadXInput();
 
@@ -291,19 +323,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   game_input *oldInput = &input[1];
 
   global_runing = true;
+  initPerfCountFrequency();
 
-#if 0
-  LARGE_INTEGER lpFrequency;
-  QueryPerformanceFrequency(&lpFrequency);
-  // 每秒计数器递增的次数
-  LONGLONG perfCountFrequency = lpFrequency.QuadPart;
-
-  // 计数器刻度数
-  LARGE_INTEGER lastCounter;
-  QueryPerformanceCounter(&lastCounter);
+  // 开始计数器
+  LARGE_INTEGER lastCounter = win64GetWallClock();
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
-#endif
 
   while (global_runing) {
     // 清空键盘控制器状态
@@ -416,28 +441,36 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     auto [width, height] = getWindowDimension(window);
     win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
 
-#if 0
+    LARGE_INTEGER endCounter = win64GetWallClock();
+    // 控制物理逻辑帧
+    uint64 secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, endCounter);
+    if (secondsElapsedForWork < targetElapsedPerFrame) {
+      if (sleepIsGranular) {
+        DWORD sleepMS = targetElapsedPerFrame - secondsElapsedForWork;
+        if (sleepMS > 0) Sleep(sleepMS);
+      }
+      while (secondsElapsedForWork < targetElapsedPerFrame) {
+        endCounter = win64GetWallClock();
+        secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, endCounter);
+      }
+    } else {
+      // TODO 超过一帧 Logging
+    }
+
     uint64 endCycleCount = __rdtsc();
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
 
-    LARGE_INTEGER endCounter;
-    QueryPerformanceCounter(&endCounter);
-    // 一帧循环所经过的计数器刻度数
-    uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
+    uint64 counterElapsed = win64GetWallClock().QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
-    float MSPerFrame = (float)counterElapsed * 1000.f / (float)perfCountFrequency;
+    float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
     // FPS = 每秒计数器递增的次数 / 一帧循环所经过的计数器刻度数
-    uint64 FPS = perfCountFrequency / counterElapsed;
+    uint64 FPS = globalPerfCountFrequency / counterElapsed;
     // 一帧CPU执行了多少万条指令
     float MCPF = (float)cycleCounterElapsed / 10000.f;
-
-    char buffer[256] = {0};
-    sprintf(buffer, "MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
-    OutputDebugStringA(buffer);
+    printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 
     lastCounter = endCounter;
     lastCycleCount = endCycleCount;
-#endif
 
     game_input *temp = newInput;
     newInput = oldInput;

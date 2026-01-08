@@ -32,7 +32,7 @@ for %%a in (%*) do (
 
 set CXXFLAGS=-std=gnu++20 -fno-exceptions -fno-rtti
 
-set LIBS=-luser32 -lgdi32 -lXinput
+set LIBS=-luser32 -lgdi32 -lXinput -lWinmm
 
 set MACRO=-DHANDMADE_INTERNAL
 
