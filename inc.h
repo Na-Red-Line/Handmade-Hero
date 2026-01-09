@@ -19,10 +19,10 @@ typedef int64_t int64;
 template <typename T, int N>
 constexpr int arr_length(T (&)[N]) { return N; }
 
-consteval uint64 KiloBytes(uint64 x) { return x << 10; }
-consteval uint64 MegaBytes(uint64 x) { return KiloBytes(x) << 10; }
-consteval uint64 GigaBytes(uint64 x) { return MegaBytes(x) << 10; }
-consteval uint64 TeraBytes(uint64 x) { return GigaBytes(x) << 10; }
+constexpr uint64 KiloBytes(uint64 x) { return x << 10; }
+constexpr uint64 MegaBytes(uint64 x) { return KiloBytes(x) << 10; }
+constexpr uint64 GigaBytes(uint64 x) { return MegaBytes(x) << 10; }
+constexpr uint64 TeraBytes(uint64 x) { return GigaBytes(x) << 10; }
 
 constexpr uint32 saveCastUint64(uint64 value) {
   assert(value <= 0xffffffff);

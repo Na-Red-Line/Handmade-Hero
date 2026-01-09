@@ -5,7 +5,7 @@ void game_output_sound(game_sound_output_buffer soundOutputBuffer, int toneHz) {
   static float tSine = 0;
 
   int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
-  float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / toneHz;
+  float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)toneHz;
 
   for (int sampleIndex = 0; sampleIndex < soundOutputBuffer.bufferSize; ++sampleIndex) {
     float sineValue = sinf(tSine); // 余弦y轴坐标
@@ -19,14 +19,12 @@ void game_output_sound(game_sound_output_buffer soundOutputBuffer, int toneHz) {
 }
 
 void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, int greenOffset) {
-  auto [memory, width, height, bytesPerPixel] = offscreenBuffer;
+  uint8 *row = (uint8 *)offscreenBuffer.memory;
+  int pitch = offscreenBuffer.width * offscreenBuffer.bytesPerPixel;
 
-  uint8 *row = (uint8 *)memory;
-  int pitch = width * bytesPerPixel;
-
-  for (int y = 0; y < height; ++y) {
+  for (int y = 0; y < offscreenBuffer.height; ++y) {
     uint32 *pixel = (uint32 *)row;
-    for (int x = 0; x < width; ++x) {
+    for (int x = 0; x < offscreenBuffer.width; ++x) {
       // memory order: RR GG BB xx
       // loaded in:    xx BB GG RR
       // window:       xx RR GG BB

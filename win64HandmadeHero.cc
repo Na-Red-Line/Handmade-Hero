@@ -12,13 +12,13 @@ static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 static LONGLONG globalPerfCountFrequency;
 
 // 优雅降级
-#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState) WIN_NOEXCEPT
+#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
 X_INPUT_GET_STATE(xInputGetState) { return 0; }
 static x_input_get_state *XInputGetState_ = xInputGetState;
 #define XInputGetState XInputGetState_
 
-#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration) WIN_NOEXCEPT
+#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(xInputSetState) { return 0; }
 static x_input_set_state *XInputSetState_ = xInputSetState;
@@ -438,8 +438,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer, sound_output_buffer);
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
-    auto [width, height] = getWindowDimension(window);
-    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
+    auto dimension = getWindowDimension(window);
+    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
 
     LARGE_INTEGER endCounter = win64GetWallClock();
     // 控制物理逻辑帧
@@ -596,8 +596,8 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
   case WM_PAINT: {
     PAINTSTRUCT paint;
     HDC deviceContext = BeginPaint(window, &paint);
-    auto [width, height] = getWindowDimension(window);
-    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, width, height);
+    auto dimension = getWindowDimension(window);
+    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
     EndPaint(window, &paint);
     break;
   }

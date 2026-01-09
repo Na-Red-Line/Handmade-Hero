@@ -30,7 +30,7 @@ for %%a in (%*) do (
 )
 
 
-set CXXFLAGS=-std=gnu++20 -fno-exceptions -fno-rtti
+set CXXFLAGS=-std=gnu++14 -fno-exceptions -fno-rtti
 
 set LIBS=-luser32 -lgdi32 -lXinput -lWinmm
 
