@@ -78,6 +78,24 @@ bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memor
   return result;
 }
 
+void debugSoundOutput(win64_offscreen_buffer *globalBackBuffer, win64_sound_output *soundOutput, DWORD *lastPlayCursor, int lastPlayCursorCount) {
+  // 边框填充
+  int padX = 50, padY = 50;
+  int top = padY;
+  int bottom = globalBackBuffer->height - 50;
+
+  float c = (float)(globalBackBuffer->width - 2 * padX) / (float)soundOutput->DSoundBufferSize;
+  for (int i = 0; i < lastPlayCursorCount; ++i) {
+    int x = padX + (int)(c * lastPlayCursor[i]);
+
+    uint8 *pixel = (uint8 *)globalBackBuffer->memory + x * globalBackBuffer->bytesPerPixel + top * globalBackBuffer->pitch;
+    for (int y = top; y < bottom; ++y) {
+      *(uint32 *)pixel = 0xFFFFFFFF;
+      pixel += globalBackBuffer->pitch;
+    }
+  }
+}
+
 // 初始化音频API
 static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
   // Load the dsound library
@@ -301,7 +319,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
   soundOutput.bytesPerSample = sizeof(int16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
-  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 15;
+  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 20;
 
   win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   win64CleanSoundBuffer(&soundOutput);
@@ -321,6 +339,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   game_input input[2] = {};
   game_input *newInput = &input[0];
   game_input *oldInput = &input[1];
+
+  int lastPlayCursorIndex = 0;
+  DWORD lastPlayCursor[gameUpdateHz / 4] = {};
 
   global_runing = true;
   initPerfCountFrequency();
@@ -436,6 +457,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     sound_output_buffer.toneVolume = soundOutput.toneVolume;
 
     gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer, sound_output_buffer);
+
+    lastPlayCursor[lastPlayCursorIndex++] = playCursor;
+    if (lastPlayCursorIndex >= arr_length(lastPlayCursor)) {
+      lastPlayCursorIndex = 0;
+    }
+    debugSoundOutput(&globalBackBuffer, &soundOutput, lastPlayCursor, arr_length(lastPlayCursor));
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
     auto dimension = getWindowDimension(window);
