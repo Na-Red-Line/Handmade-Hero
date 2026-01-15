@@ -15,6 +15,8 @@ void game_output_sound(game_sound_output_buffer soundOutputBuffer, int toneHz) {
     *sampleOut++ = sampleValue;
     // 适应频率改变
     tSine += (PI * 2.0f) / wavePeroid;
+    // 防止精度丢失
+    if (tSine > PI * 2.0f) tSine -= PI * 2.0f;
   }
 }
 
@@ -37,19 +39,21 @@ void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, i
   }
 }
 
-void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer, game_sound_output_buffer soundOutputBuffer) {
+void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer) {
   assert(&gameInput->controller->terminator - gameInput->controller->Button == arr_length(gameInput->controller->Button));
   assert(sizeof(game_state) <= memory->permanentStorageSize);
 
   game_state *gameState = (game_state *)memory->permanentStorage;
 
   if (!memory->isInitialized) {
-    char *filename = (char *)__FILE__;
+#if 0
+		char *filename = (char *)__FILE__;
     auto result = DEBUGPlatformReadFile(filename);
     if (result.memory) {
       DEBUGPlatformWriteEntireFile((char *)"test.out", result.fileSize, result.memory);
       DEBUGPlatformFreeMemory(result.memory);
     }
+#endif
 
     gameState->toneHz = 256;
     memory->isInitialized = true;
@@ -72,6 +76,10 @@ void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscr
     }
   }
 
-  game_output_sound(soundOutputBuffer, gameState->toneHz);
   renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
+}
+
+void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer soundOutputBuffer) {
+  game_state *gameState = (game_state *)memory->permanentStorage;
+  game_output_sound(soundOutputBuffer, gameState->toneHz);
 }

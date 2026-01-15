@@ -1,3 +1,5 @@
+#pragma once
+
 #include "inc.h"
 
 #include <dsound.h>
@@ -27,4 +29,14 @@ struct win64_sound_output {
   int bytesPerSample;       // 双声道，左右各16比特，2字节
   int DSoundBufferSize;     // 缓冲区大小
   int latencySampleCount;   // 声音延迟
+};
+
+struct win64_debug_time_marker {
+  DWORD outputPlayCursor;
+  DWORD outputWriteCursor;
+  DWORD outputLocation;
+  DWORD expectedFlipPlayCursor;
+
+  DWORD flipPlayCursor;
+  DWORD flipWriteCursor;
 };

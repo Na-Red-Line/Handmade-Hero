@@ -5,7 +5,8 @@
 #include <stdio.h>
 #include "windows.h"
 
-static bool global_runing;
+static bool globalRuning;
+static bool globalPause;
 static win64_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 // 每秒计数器递增的次数
@@ -202,7 +203,7 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
 
     switch (msg.message) {
     case WM_QUIT:
-      global_runing = false;
+      globalRuning = false;
       break;
 
     case WM_SYSKEYDOWN: // 系统键按下
@@ -244,7 +245,7 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
 
       // 系统按键 ALT + F4
       int32 altKeyWasDown = msg.lParam & (1 << 29);
-      if (VKCode == VK_F4 && altKeyWasDown) global_runing = false;
+      if (VKCode == VK_F4 && altKeyWasDown) globalRuning = false;
 
       break;
     }
@@ -319,7 +320,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
   soundOutput.bytesPerSample = sizeof(int16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
-  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 20;
+  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 30;
 
   win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   win64CleanSoundBuffer(&soundOutput);
@@ -340,10 +341,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   game_input *newInput = &input[0];
   game_input *oldInput = &input[1];
 
-  int lastPlayCursorIndex = 0;
-  DWORD lastPlayCursor[gameUpdateHz / 4] = {};
+  DWORD lastPlayCursor = 0;
+  bool soundIsValid = false;
+  DWORD audioLatencyBytes = 0;
+  float audioLatencySeconds = 0;
 
-  global_runing = true;
+  // debug
+  int lastPlayCursorIndex = 0;
+  DWORD playCursors[gameUpdateHz / 4] = {};
+
+  globalRuning = true;
   initPerfCountFrequency();
 
   // 开始计数器
@@ -351,7 +358,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
 
-  while (global_runing) {
+  while (globalRuning) {
     // 清空键盘控制器状态
     game_controller_input *oldController = &oldInput->controller[0];
     game_controller_input *newController = &newInput->controller[0];
@@ -421,7 +428,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       win64ProcessXInputDigitalButton(&newController->back, &oldController->back, pad->wButtons, XINPUT_GAMEPAD_BACK);
 
       newController->isConnected = true;
-      if (pad->wButtons & XINPUT_GAMEPAD_B) global_runing = false;
+      if (pad->wButtons & XINPUT_GAMEPAD_B) globalRuning = false;
     }
 
 #if 0
@@ -430,18 +437,18 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     XInputSetState(0, &vibration);
 #endif
 
-    DWORD playCursor;  // 当前播放光标
-    DWORD writeCursor; // 可写入光标
-    DWORD byteToLock;
-    DWORD bytesToWrite;
-    bool soundIsValid;
-    if (SUCCEEDED(globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor))) {
+    DWORD byteToLock = 0;
+    DWORD targetCursor = 0;
+    DWORD bytesToWrite = 0;
+    if (soundIsValid) {
       byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
-      DWORD targetCursor =
-          (playCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
-      bytesToWrite =
-          byteToLock > targetCursor ? soundOutput.DSoundBufferSize - byteToLock + targetCursor : targetCursor - byteToLock;
-      soundIsValid = true;
+      targetCursor = (lastPlayCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      if (byteToLock > targetCursor) {
+        bytesToWrite = soundOutput.DSoundBufferSize - byteToLock;
+        bytesToWrite += targetCursor;
+      } else {
+        bytesToWrite = targetCursor - byteToLock;
+      }
     }
 
     game_offscreen_buffer offscreen_buffer = {};
@@ -456,13 +463,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     sound_output_buffer.samplesPerSecond = soundOutput.samplesPerSecond;
     sound_output_buffer.toneVolume = soundOutput.toneVolume;
 
-    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer, sound_output_buffer);
+    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer);
 
-    lastPlayCursor[lastPlayCursorIndex++] = playCursor;
-    if (lastPlayCursorIndex >= arr_length(lastPlayCursor)) {
+    playCursors[lastPlayCursorIndex++] = lastPlayCursor;
+    if (lastPlayCursorIndex >= arr_length(playCursors)) {
       lastPlayCursorIndex = 0;
     }
-    debugSoundOutput(&globalBackBuffer, &soundOutput, lastPlayCursor, arr_length(lastPlayCursor));
+    debugSoundOutput(&globalBackBuffer, &soundOutput, playCursors, arr_length(playCursors));
 
     if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
     auto dimension = getWindowDimension(window);
@@ -477,17 +484,39 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         if (sleepMS > 0) Sleep(sleepMS);
       }
       while (secondsElapsedForWork < targetElapsedPerFrame) {
-        endCounter = win64GetWallClock();
-        secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, endCounter);
+        secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, win64GetWallClock());
       }
     } else {
       // TODO 超过一帧 Logging
     }
 
+    // 控制音频延迟
+    DWORD playCursor;  // 当前播放光标
+    DWORD writeCursor; // 可写入光标
+    if (globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor) == DS_OK) {
+
+      DWORD unwrappedWriteCursor = writeCursor;
+      if (unwrappedWriteCursor < playCursor) {
+        unwrappedWriteCursor += soundOutput.DSoundBufferSize;
+      }
+      audioLatencyBytes = unwrappedWriteCursor - playCursor;
+      audioLatencySeconds = ((float)audioLatencyBytes / (float)soundOutput.bytesPerSample) / (float)soundOutput.samplesPerSecond;
+      printf("DELTA:%lu (%fs)\n", audioLatencyBytes, audioLatencySeconds);
+
+      lastPlayCursor = playCursor;
+      if (!soundIsValid) {
+        soundOutput.runingSampleIndex = writeCursor / soundOutput.bytesPerSample;
+        soundIsValid = true;
+      }
+    } else {
+      soundIsValid = false;
+    }
+
     uint64 endCycleCount = __rdtsc();
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
 
-    uint64 counterElapsed = win64GetWallClock().QuadPart - lastCounter.QuadPart;
+    endCounter = win64GetWallClock();
+    uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
     float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
     // FPS = 每秒计数器递增的次数 / 一帧循环所经过的计数器刻度数
@@ -608,12 +637,12 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
 
   case WM_DESTROY:
     // TODO handle this as an error - recreate window
-    global_runing = false;
+    globalRuning = false;
     break;
 
   case WM_CLOSE:
     // TODO handle this with a message to the user
-    global_runing = false;
+    globalRuning = false;
     break;
 
   case WM_ACTIVATEAPP:
