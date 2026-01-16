@@ -79,24 +79,6 @@ bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memor
   return result;
 }
 
-void debugSoundOutput(win64_offscreen_buffer *globalBackBuffer, win64_sound_output *soundOutput, DWORD *lastPlayCursor, int lastPlayCursorCount) {
-  // 边框填充
-  int padX = 50, padY = 50;
-  int top = padY;
-  int bottom = globalBackBuffer->height - 50;
-
-  float c = (float)(globalBackBuffer->width - 2 * padX) / (float)soundOutput->DSoundBufferSize;
-  for (int i = 0; i < lastPlayCursorCount; ++i) {
-    int x = padX + (int)(c * lastPlayCursor[i]);
-
-    uint8 *pixel = (uint8 *)globalBackBuffer->memory + x * globalBackBuffer->bytesPerPixel + top * globalBackBuffer->pitch;
-    for (int y = top; y < bottom; ++y) {
-      *(uint32 *)pixel = 0xFFFFFFFF;
-      pixel += globalBackBuffer->pitch;
-    }
-  }
-}
-
 // 初始化音频API
 static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
   // Load the dsound library
@@ -241,6 +223,11 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
         } else if (VKCode == VK_SPACE) {
           win64ProcessKeyboardMessage(&keyboardController->back, isDown);
         }
+#ifdef HANDMADE_INTERNAL
+        else if (VKCode == 'P') {
+          if (isDown) globalPause = !globalPause;
+        }
+#endif
       }
 
       // 系统按键 ALT + F4
@@ -249,10 +236,12 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
 
       break;
     }
-    }
 
-    TranslateMessage(&msg);
-    DispatchMessageA(&msg);
+    default:
+      TranslateMessage(&msg);
+      DispatchMessageA(&msg);
+      break;
+    }
   }
 }
 
@@ -272,6 +261,86 @@ static float win64ProcessXInputStickValue(float value, float thumbDeadZone) {
     return stick / maxPositiveThumb;
   } else {
     return 0;
+  }
+}
+
+static void win64DebugDrawVertical(win64_offscreen_buffer *backbuffer, int xOffset, int top, int bottom, uint32 color) {
+  if (top <= 0) top = 0;
+
+  if (bottom > backbuffer->height) bottom = backbuffer->height;
+
+  if ((xOffset >= 0) && (xOffset < backbuffer->width)) {
+    uint8 *pixel = (uint8 *)backbuffer->memory + xOffset * backbuffer->bytesPerPixel + top * backbuffer->pitch;
+    for (int y = top; y < bottom; ++y) {
+      *(uint32 *)pixel = color;
+      pixel += backbuffer->pitch;
+    }
+  }
+}
+
+static void win64DrawSoundBufferMarker(win64_offscreen_buffer *backbuffer,
+                                       win64_sound_output *soundOutput,
+                                       float c, int padX, int top, int bottom,
+                                       DWORD value, uint32 color) {
+  float XReal32 = (c * (float)value);
+  int xOffset = padX + (int)XReal32;
+  win64DebugDrawVertical(backbuffer, xOffset, top, bottom, color);
+}
+
+void win64DebugSyncDisplay(win64_offscreen_buffer *backbuffer,
+                           int markerCount,
+                           win64_debug_time_marker *markers,
+                           int currentMarkerIndex,
+                           win64_sound_output *soundOutput,
+                           float targetSecondsPerFrame) {
+  int PadX = 16;
+  int PadY = 16;
+
+  int LineHeight = 64;
+
+  float C = (float)(backbuffer->width - 2 * PadX) / (float)soundOutput->DSoundBufferSize;
+  for (int MarkerIndex = 0;
+       MarkerIndex < markerCount;
+       ++MarkerIndex) {
+    win64_debug_time_marker *ThisMarker = &markers[MarkerIndex];
+    assert(ThisMarker->outputPlayCursor < soundOutput->DSoundBufferSize);
+    assert(ThisMarker->outputWriteCursor < soundOutput->DSoundBufferSize);
+    assert(ThisMarker->outputLocation < soundOutput->DSoundBufferSize);
+    assert(ThisMarker->outputByteCount < soundOutput->DSoundBufferSize);
+    assert(ThisMarker->flipPlayCursor < soundOutput->DSoundBufferSize);
+    assert(ThisMarker->flipWriteCursor < soundOutput->DSoundBufferSize);
+
+    DWORD PlayColor = 0xFFFFFFFF;
+    DWORD WriteColor = 0xFFFF0000;
+    DWORD ExpectedFlipColor = 0xFFFFFF00;
+    DWORD PlayWindowColor = 0xFFFF00FF;
+
+    int Top = PadY;
+    int Bottom = PadY + LineHeight;
+    if (MarkerIndex == currentMarkerIndex) {
+      Top += LineHeight + PadY;
+      Bottom += LineHeight + PadY;
+
+      int FirstTop = Top;
+
+      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputPlayCursor, PlayColor);
+      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputWriteCursor, WriteColor);
+
+      Top += LineHeight + PadY;
+      Bottom += LineHeight + PadY;
+
+      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation, PlayColor);
+      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation + ThisMarker->outputByteCount, WriteColor);
+
+      Top += LineHeight + PadY;
+      Bottom += LineHeight + PadY;
+
+      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, FirstTop, Bottom, ThisMarker->expectedFlipPlayCursor, ExpectedFlipColor);
+    }
+
+    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor, PlayColor);
+    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor + 480 * soundOutput->bytesPerSample, PlayWindowColor);
+    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipWriteCursor, WriteColor);
   }
 }
 
@@ -320,7 +389,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
   soundOutput.bytesPerSample = sizeof(int16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
-  soundOutput.latencySampleCount = soundOutput.samplesPerSecond / 30;
+  soundOutput.latencySampleCount = 3 * (soundOutput.samplesPerSecond / gameUpdateHz);
+  soundOutput.safetyBytes = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample / gameUpdateHz) / 3;
 
   win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   win64CleanSoundBuffer(&soundOutput);
@@ -346,15 +416,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   DWORD audioLatencyBytes = 0;
   float audioLatencySeconds = 0;
 
-  // debug
-  int lastPlayCursorIndex = 0;
-  DWORD playCursors[gameUpdateHz / 4] = {};
+  int debugTimeMarkerIndex = 0;
+  win64_debug_time_marker debugTimeMarkers[gameUpdateHz / 4] = {0};
 
   globalRuning = true;
   initPerfCountFrequency();
 
   // 开始计数器
   LARGE_INTEGER lastCounter = win64GetWallClock();
+  // 游戏更新时间
+  LARGE_INTEGER flipWallClock = win64GetWallClock();
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
 
@@ -431,49 +502,101 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       if (pad->wButtons & XINPUT_GAMEPAD_B) globalRuning = false;
     }
 
+    // 暂停
+    if (globalPause) continue;
+
 #if 0
     // 手柄震动
     XINPUT_VIBRATION vibration = {60000, 60000};
     XInputSetState(0, &vibration);
 #endif
 
-    DWORD byteToLock = 0;
-    DWORD targetCursor = 0;
-    DWORD bytesToWrite = 0;
-    if (soundIsValid) {
-      byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
-      targetCursor = (lastPlayCursor + soundOutput.latencySampleCount * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+    game_offscreen_buffer offscreen_buffer = {};
+    offscreen_buffer.memory = globalBackBuffer.memory;
+    offscreen_buffer.width = globalBackBuffer.width;
+    offscreen_buffer.height = globalBackBuffer.height;
+    offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
+    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer);
+
+    LARGE_INTEGER audioWallClock = win64GetWallClock();
+    DWORD fromBeginToAudioSeconds = win64GetSecondsElapsed(flipWallClock, audioWallClock);
+
+    // 控制音频延迟
+    DWORD playCursor;  // 当前播放光标
+    DWORD writeCursor; // 可写入光标
+    if (globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor) == DS_OK) {
+      // 重置音频更新索引为音频写入光标
+      if (!soundIsValid) {
+        soundOutput.runingSampleIndex = writeCursor / soundOutput.bytesPerSample;
+        soundIsValid = true;
+      }
+
+      // 加锁写入音频位置
+      DWORD byteToLock = (soundOutput.runingSampleIndex * soundOutput.bytesPerSample) % soundOutput.DSoundBufferSize;
+      // 预期写入字节
+      DWORD expectedSoundBytesPerFrame = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample) / gameUpdateHz;
+      // 每帧剩余时间
+      DWORD secondsLeftUntilFlip = targetElapsedPerFrame - fromBeginToAudioSeconds;
+      // 预期剩余时间可以写入的字节
+      DWORD expectedBytesUntilFlip = (DWORD)(((float)secondsLeftUntilFlip / (float)targetElapsedPerFrame) * (float)expectedSoundBytesPerFrame);
+      // 预期写入的边界
+      DWORD expectedFrameBoundaryByte = playCursor + expectedSoundBytesPerFrame;
+
+      // 安全光标
+      DWORD safeWriteCursor = writeCursor;
+      if (safeWriteCursor < playCursor) {
+        safeWriteCursor += soundOutput.DSoundBufferSize;
+      }
+      assert(safeWriteCursor >= playCursor);
+      safeWriteCursor += soundOutput.safetyBytes;
+
+      bool audioCardIsLowLatency = safeWriteCursor < expectedFrameBoundaryByte;
+
+      DWORD targetCursor = 0;
+      if (audioCardIsLowLatency) {
+        targetCursor = expectedFrameBoundaryByte + expectedSoundBytesPerFrame;
+      } else {
+        targetCursor = writeCursor + expectedSoundBytesPerFrame + soundOutput.safetyBytes;
+      }
+      targetCursor = targetCursor % soundOutput.DSoundBufferSize;
+
+      DWORD bytesToWrite = 0;
       if (byteToLock > targetCursor) {
         bytesToWrite = soundOutput.DSoundBufferSize - byteToLock;
         bytesToWrite += targetCursor;
       } else {
         bytesToWrite = targetCursor - byteToLock;
       }
+
+      game_sound_output_buffer soundBuffer = {};
+      soundBuffer.samplesPerSecond = soundOutput.samplesPerSecond;
+      soundBuffer.bufferSize = bytesToWrite / soundOutput.bytesPerSample;
+      soundBuffer.buffer = samples;
+      soundBuffer.toneVolume = soundOutput.toneVolume;
+      gameGetSoundSamples(&gameMemory, soundBuffer);
+
+#ifdef HANDMADE_INTERNAL
+      win64_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
+      marker->outputPlayCursor = playCursor;
+      marker->outputWriteCursor = writeCursor;
+      marker->outputLocation = byteToLock;
+      marker->outputByteCount = bytesToWrite;
+      marker->expectedFlipPlayCursor = expectedFrameBoundaryByte;
+
+      DWORD unwrappedWriteCursor = writeCursor;
+      if (unwrappedWriteCursor < playCursor) {
+        unwrappedWriteCursor += soundOutput.DSoundBufferSize;
+      }
+      audioLatencyBytes = unwrappedWriteCursor - playCursor;
+      audioLatencySeconds = ((float)audioLatencyBytes / (float)soundOutput.bytesPerSample) / (float)soundOutput.samplesPerSecond;
+      printf("BTL:%lu TC:%lu BTW:%lu - PC:%lu WC:%lu DELTA:%lu (%fs)\n",
+             byteToLock, targetCursor, bytesToWrite, playCursor, writeCursor, audioLatencyBytes, audioLatencySeconds);
+#endif
+
+      win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &soundBuffer);
+    } else {
+      soundIsValid = false;
     }
-
-    game_offscreen_buffer offscreen_buffer = {};
-    offscreen_buffer.memory = globalBackBuffer.memory;
-    offscreen_buffer.width = globalBackBuffer.width;
-    offscreen_buffer.height = globalBackBuffer.height;
-    offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
-
-    game_sound_output_buffer sound_output_buffer = {};
-    sound_output_buffer.buffer = (void *)samples;
-    sound_output_buffer.bufferSize = (int)(bytesToWrite / soundOutput.bytesPerSample);
-    sound_output_buffer.samplesPerSecond = soundOutput.samplesPerSecond;
-    sound_output_buffer.toneVolume = soundOutput.toneVolume;
-
-    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer);
-
-    playCursors[lastPlayCursorIndex++] = lastPlayCursor;
-    if (lastPlayCursorIndex >= arr_length(playCursors)) {
-      lastPlayCursorIndex = 0;
-    }
-    debugSoundOutput(&globalBackBuffer, &soundOutput, playCursors, arr_length(playCursors));
-
-    if (soundIsValid) win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &sound_output_buffer);
-    auto dimension = getWindowDimension(window);
-    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
 
     LARGE_INTEGER endCounter = win64GetWallClock();
     // 控制物理逻辑帧
@@ -483,33 +606,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         DWORD sleepMS = targetElapsedPerFrame - secondsElapsedForWork;
         if (sleepMS > 0) Sleep(sleepMS);
       }
+
+      uint64 testSecondsElapsedForFrame = win64GetSecondsElapsed(lastCounter, win64GetWallClock());
+      if (testSecondsElapsedForFrame < targetElapsedPerFrame) {
+        // TODO LOG MISSED SLEEP HERE
+      }
+
       while (secondsElapsedForWork < targetElapsedPerFrame) {
         secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, win64GetWallClock());
       }
     } else {
       // TODO 超过一帧 Logging
-    }
-
-    // 控制音频延迟
-    DWORD playCursor;  // 当前播放光标
-    DWORD writeCursor; // 可写入光标
-    if (globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor) == DS_OK) {
-
-      DWORD unwrappedWriteCursor = writeCursor;
-      if (unwrappedWriteCursor < playCursor) {
-        unwrappedWriteCursor += soundOutput.DSoundBufferSize;
-      }
-      audioLatencyBytes = unwrappedWriteCursor - playCursor;
-      audioLatencySeconds = ((float)audioLatencyBytes / (float)soundOutput.bytesPerSample) / (float)soundOutput.samplesPerSecond;
-      printf("DELTA:%lu (%fs)\n", audioLatencyBytes, audioLatencySeconds);
-
-      lastPlayCursor = playCursor;
-      if (!soundIsValid) {
-        soundOutput.runingSampleIndex = writeCursor / soundOutput.bytesPerSample;
-        soundIsValid = true;
-      }
-    } else {
-      soundIsValid = false;
     }
 
     uint64 endCycleCount = __rdtsc();
@@ -525,12 +632,41 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     float MCPF = (float)cycleCounterElapsed / 10000.f;
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 
+#ifdef HANDMADE_INTERNAL
+    win64DebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);
+#endif
+
+    auto dimension = getWindowDimension(window);
+    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
+    flipWallClock = win64GetWallClock();
+
+#ifdef HANDMADE_INTERNAL
+    // NOTE: This is debug code
+    {
+      DWORD playCursor;
+      DWORD writeCursor;
+      if (globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor) == DS_OK) {
+        assert(debugTimeMarkerIndex < arr_length(debugTimeMarkers));
+        win64_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
+        marker->flipPlayCursor = playCursor;
+        marker->flipWriteCursor = writeCursor;
+      }
+    }
+#endif
+
     lastCounter = endCounter;
     lastCycleCount = endCycleCount;
 
     game_input *temp = newInput;
     newInput = oldInput;
     oldInput = temp;
+
+#ifdef HANDMADE_INTERNAL
+    ++debugTimeMarkerIndex;
+    if (debugTimeMarkerIndex == arr_length(debugTimeMarkers)) {
+      debugTimeMarkerIndex = 0;
+    }
+#endif
   }
 
   return 0;

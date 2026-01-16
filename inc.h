@@ -113,3 +113,5 @@ struct game_memory {
 };
 
 void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer);
+
+void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer soundOutputBuffer);

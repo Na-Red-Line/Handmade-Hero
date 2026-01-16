@@ -40,7 +40,7 @@ foreach ($arg in $args) {
 	}
 }
 
-$CXXFLAGS = @("-std=gnu++14", "-fno-exceptions", "-fno-rtti")
+$CXXFLAGS = @("-std=gnu++17", "-fno-exceptions", "-fno-rtti")
 $LIBS = @("-luser32", "-lgdi32", "-lXinput", "-lWinmm")
 $XLINKER = @("-Wl,/SUBSYSTEM:WINDOWS,/OPT:REF,/OPT:ICF")
 

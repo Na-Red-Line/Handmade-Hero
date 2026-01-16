@@ -29,12 +29,14 @@ struct win64_sound_output {
   int bytesPerSample;       // 双声道，左右各16比特，2字节
   int DSoundBufferSize;     // 缓冲区大小
   int latencySampleCount;   // 声音延迟
+  int safetyBytes;          // 每帧缓冲区安全值
 };
 
 struct win64_debug_time_marker {
   DWORD outputPlayCursor;
   DWORD outputWriteCursor;
   DWORD outputLocation;
+  DWORD outputByteCount;
   DWORD expectedFlipPlayCursor;
 
   DWORD flipPlayCursor;
