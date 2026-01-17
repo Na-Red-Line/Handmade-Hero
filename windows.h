@@ -45,6 +45,7 @@ struct win64_debug_time_marker {
 
 struct win64_game_code {
   HMODULE gameCodeDLL;
+  FILETIME DLLLastWriteTime;
   game_update_and_render *updateAndRender;
   game_get_sound_samples *getSoundSamples;
 

@@ -82,11 +82,27 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debugPlatformWriteEntireFile) {
 #endif
 
 // 动态读取加载游戏相关代码
-static win64_game_code win64LoadGameCode() {
+// 获取DLL文件最后更新时间，如果发现更新则卸载重读DLL
+// 可以做到一帧延迟更新
+static FILETIME winGetLastWriteTime(char *filename) {
+  FILETIME lastWriteTime = {};
+
+  WIN32_FIND_DATAA findData;
+  HANDLE FindHandle = FindFirstFileA(filename, &findData);
+  if (FindHandle != INVALID_HANDLE_VALUE) {
+    lastWriteTime = findData.ftLastWriteTime;
+    FindClose(FindHandle);
+  }
+
+  return lastWriteTime;
+}
+
+static win64_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
   win64_game_code result = {};
 
-  CopyFileA("handmade.dll", "handmade_temp.dll", FALSE);
-  result.gameCodeDLL = LoadLibraryA("handmade_temp.dll");
+  result.DLLLastWriteTime = winGetLastWriteTime(sourceDLLName);
+  CopyFileA(sourceDLLName, tempDLLName, FALSE);
+  result.gameCodeDLL = LoadLibraryA(tempDLLName);
   if (result.gameCodeDLL) {
     result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
     result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
@@ -102,7 +118,7 @@ static win64_game_code win64LoadGameCode() {
 }
 
 // 动态读取卸载游戏相关代码
-static void win64UnloadGameCode(win64_game_code *gameCode) {
+static void winUnloadGameCode(win64_game_code *gameCode) {
   if (gameCode->gameCodeDLL) {
     FreeLibrary(gameCode->gameCodeDLL);
     gameCode->gameCodeDLL = 0;
@@ -410,6 +426,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   constexpr UINT desiredSchedulerMS = 1;
   bool sleepIsGranular = timeBeginPeriod(desiredSchedulerMS) == TIMERR_STRUCT;
 
+  // 初始化游戏DDL
+  // 获取主进程当前路径
+  char EXEFileName[MAX_PATH];
+  DWORD sizeOfFilename = GetModuleFileNameA(0, EXEFileName, sizeof(EXEFileName));
+  // 找到最后一个文件分隔符并设置为'\0'
+  size_t onePastLastSlashSize = sizeOfFilename - 1;
+  for (; onePastLastSlashSize > 0; --onePastLastSlashSize)
+    if (EXEFileName[onePastLastSlashSize] == '\\') {
+      EXEFileName[onePastLastSlashSize + 1] = '\0';
+      break;
+    }
+
+  char sourceGameCodeDLLFilename[] = "handmade.dll";
+  char sourceGameCodeDLLFullPath[MAX_PATH];
+  sprintf(sourceGameCodeDLLFullPath, "%s%s", EXEFileName, sourceGameCodeDLLFilename);
+
+  char tempGameCodeDLLFilename[] = "handmade_temp.dll";
+  char tempGameCodeDLLFullPath[MAX_PATH];
+  sprintf(tempGameCodeDLLFullPath, "%s%s", EXEFileName, tempGameCodeDLLFilename);
+
   win64LoadXInput();
 
   HDC deviceContext = GetDC(window);
@@ -466,15 +502,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
 
-  win64_game_code gameCode = win64LoadGameCode();
-  uint32 loadGameCodeCount = 0;
+  win64_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
 
   while (globalRuning) {
-    // 每三秒热更新游戏代码一次
-    if (loadGameCodeCount++ > gameUpdateHz * 3) {
-      win64UnloadGameCode(&gameCode);
-      gameCode = win64LoadGameCode();
-      loadGameCodeCount = 0;
+    // 检测DLL文件更新重新读取DLL文件
+    FILETIME newDLLWriteTime = winGetLastWriteTime(sourceGameCodeDLLFullPath);
+    if (CompareFileTime(&newDLLWriteTime, &gameCode.DLLLastWriteTime) != 0) {
+      winUnloadGameCode(&gameCode);
+      gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
     }
 
     // 清空键盘控制器状态
