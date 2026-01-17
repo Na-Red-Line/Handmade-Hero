@@ -30,15 +30,22 @@ constexpr uint32 saveCastUint64(uint64 value) {
 }
 
 #ifdef HANDMADE_INTERNAL
-// IMPORT 测试使用
+// IMPORT 测试使用 平台无关文件IO
 
 struct debug_read_file_result {
   uint32 fileSize;
-  void *memory;
+  void *contents;
 };
-debug_read_file_result DEBUGPlatformReadFile(char *filename);
-void DEBUGPlatformFreeMemory(void *memory);
-bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memory);
+
+#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
+
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *filename)
+typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
+
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(char *filename, uint32 memorySize, void *memory)
+typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
+
 #endif
 
 // 更新屏幕渲染
@@ -104,14 +111,26 @@ struct game_state {
   int blueOffset;
   int greenOffset;
   int toneHz;
+  // 余弦x轴坐标
+  float tSine;
 };
 
 struct game_memory {
   bool isInitialized;
   uint64 permanentStorageSize;
+  // NOTE 游戏内存，暂为 game_state
   void *permanentStorage;
+
+  debug_platform_free_file_memory *debugPlatformFreeFileMemory;
+  debug_platform_read_entire_file *debugPlatformReadEntireFile;
+  debug_platform_write_entire_file *debugPlatformWriteEntireFile;
 };
 
-void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer);
+// 动态链接加载方法
+#define GAME_UPDATE_AND_RENDER(name) void name(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer)
+typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
+GAME_UPDATE_AND_RENDER(gameUpdateAndRenderStub) {} // NOLINT
 
-void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer soundOutputBuffer);
+#define GAME_GET_SOUND_SAMPLES(name) void name(game_memory *memory, game_sound_output_buffer soundOutputBuffer)
+typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+GAME_GET_SOUND_SAMPLES(gameGetSoundSamplesStub) {} // NOLINT

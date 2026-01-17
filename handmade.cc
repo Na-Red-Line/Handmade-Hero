@@ -1,22 +1,19 @@
-#include "inc.h"
+#include "handmade.h"
 
-void game_output_sound(game_sound_output_buffer soundOutputBuffer, int toneHz) {
-  // 余弦x轴坐标
-  static float tSine = 0;
-
+void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
   int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
-  float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)toneHz;
+  float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)gameState->toneHz;
 
   for (int sampleIndex = 0; sampleIndex < soundOutputBuffer.bufferSize; ++sampleIndex) {
-    float sineValue = sinf(tSine); // 余弦y轴坐标
+    float sineValue = sinf(gameState->tSine); // 余弦y轴坐标
     int sampleValue = sineValue * soundOutputBuffer.toneVolume;
     // 写入左右双声道
     *sampleOut++ = sampleValue;
     *sampleOut++ = sampleValue;
     // 适应频率改变
-    tSine += (PI * 2.0f) / wavePeroid;
+    gameState->tSine += (PI * 2.0f) / wavePeroid;
     // 防止精度丢失
-    if (tSine > PI * 2.0f) tSine -= PI * 2.0f;
+    if (gameState->tSine > PI * 2.0f) gameState->tSine -= PI * 2.0f;
   }
 }
 
@@ -39,19 +36,24 @@ void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, i
   }
 }
 
-void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer) {
+extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
+  static bool isWrite;
+
   assert(&gameInput->controller->terminator - gameInput->controller->Button == arr_length(gameInput->controller->Button));
   assert(sizeof(game_state) <= memory->permanentStorageSize);
 
   game_state *gameState = (game_state *)memory->permanentStorage;
 
   if (!memory->isInitialized) {
-#if 0
-		char *filename = (char *)__FILE__;
-    auto result = DEBUGPlatformReadFile(filename);
-    if (result.memory) {
-      DEBUGPlatformWriteEntireFile((char *)"test.out", result.fileSize, result.memory);
-      DEBUGPlatformFreeMemory(result.memory);
+#if HANDMADE_INTERNAL
+    if (!isWrite) {
+      char *filename = (char *)__FILE__;
+      auto result = memory->debugPlatformReadEntireFile(filename);
+      if (result.contents) {
+        memory->debugPlatformWriteEntireFile((char *)"test.out", result.fileSize, result.contents);
+        memory->debugPlatformFreeFileMemory(result.contents);
+      }
+      isWrite = true;
     }
 #endif
 
@@ -79,7 +81,7 @@ void gameUpdateAndRender(game_memory *memory, game_input *gameInput, game_offscr
   renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
 }
 
-void gameGetSoundSamples(game_memory *memory, game_sound_output_buffer soundOutputBuffer) {
+extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {
   game_state *gameState = (game_state *)memory->permanentStorage;
-  game_output_sound(soundOutputBuffer, gameState->toneHz);
+  game_output_sound(soundOutputBuffer, gameState);
 }

@@ -31,11 +31,12 @@ DIRECT_SOUND_CREATE(directSoundCreate) { return 0; }
 static direct_sound_create *DirectSoundCreate_ = directSoundCreate;
 #define DirectSoundCreate DirectSoundCreate_
 
-void DEBUGPlatformFreeMemory(void *memory) {
+#ifdef HANDMADE_INTERNAL
+DEBUG_PLATFORM_FREE_FILE_MEMORY(debugPlatformFreeFileMemory) {
   if (memory) VirtualFree(memory, 0, 0);
 }
 
-debug_read_file_result DEBUGPlatformReadFile(char *filename) {
+DEBUG_PLATFORM_READ_ENTIRE_FILE(debugPlatformReadEntireFile) {
   debug_read_file_result result = {0, nullptr};
   HANDLE fileHandle = CreateFileA(filename, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
   if (fileHandle == INVALID_HANDLE_VALUE) return result;
@@ -43,25 +44,25 @@ debug_read_file_result DEBUGPlatformReadFile(char *filename) {
   LARGE_INTEGER fileSize;
   if (!GetFileSizeEx(fileHandle, &fileSize)) return result;
 
-  result.memory = VirtualAlloc(0, fileSize.QuadPart, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-  if (!result.memory) {
+  result.contents = VirtualAlloc(0, fileSize.QuadPart, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  if (!result.contents) {
     // TODO 读取文件内存分配失败
   }
 
   DWORD bytesRead;
   result.fileSize = saveCastUint64(fileSize.QuadPart);
-  if (ReadFile(fileHandle, result.memory, result.fileSize, &bytesRead, 0) && result.fileSize == bytesRead) {
+  if (ReadFile(fileHandle, result.contents, result.fileSize, &bytesRead, 0) && result.fileSize == bytesRead) {
     // NOTE 读取成功
   } else {
-    DEBUGPlatformFreeMemory(result.memory);
-    result.memory = nullptr;
+    debugPlatformFreeFileMemory(result.contents);
+    result.contents = nullptr;
   }
 
   CloseHandle(fileHandle);
   return result;
 }
 
-bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memory) {
+DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debugPlatformWriteEntireFile) {
   bool result = false;
 
   HANDLE fileHandle = CreateFileA(filename, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
@@ -77,6 +78,39 @@ bool DEBUGPlatformWriteEntireFile(char *filename, uint32 memorySize, void *memor
 
   CloseHandle(fileHandle);
   return result;
+}
+#endif
+
+// 动态读取加载游戏相关代码
+static win64_game_code win64LoadGameCode() {
+  win64_game_code result = {};
+
+  CopyFileA("handmade.dll", "handmade_temp.dll", FALSE);
+  result.gameCodeDLL = LoadLibraryA("handmade_temp.dll");
+  if (result.gameCodeDLL) {
+    result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
+    result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
+    result.isValid = result.updateAndRender && result.getSoundSamples;
+  }
+
+  if (!result.isValid) {
+    result.updateAndRender = gameUpdateAndRenderStub;
+    result.getSoundSamples = gameGetSoundSamplesStub;
+  }
+
+  return result;
+}
+
+// 动态读取卸载游戏相关代码
+static void win64UnloadGameCode(win64_game_code *gameCode) {
+  if (gameCode->gameCodeDLL) {
+    FreeLibrary(gameCode->gameCodeDLL);
+    gameCode->gameCodeDLL = 0;
+  }
+
+  gameCode->isValid = false;
+  gameCode->updateAndRender = gameUpdateAndRenderStub;
+  gameCode->getSoundSamples = gameGetSoundSamplesStub;
 }
 
 // 初始化音频API
@@ -402,6 +436,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   gameMemory.isInitialized = false;
   gameMemory.permanentStorageSize = GigaBytes(4);
   gameMemory.permanentStorage = VirtualAlloc(0, gameMemory.permanentStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  gameMemory.debugPlatformFreeFileMemory = debugPlatformFreeFileMemory;
+  gameMemory.debugPlatformReadEntireFile = debugPlatformReadEntireFile;
+  gameMemory.debugPlatformWriteEntireFile = debugPlatformWriteEntireFile;
 
   if (!samples || !gameMemory.permanentStorage) {
     // TODO 分配失败
@@ -429,7 +466,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
 
+  win64_game_code gameCode = win64LoadGameCode();
+  uint32 loadGameCodeCount = 0;
+
   while (globalRuning) {
+    // 每三秒热更新游戏代码一次
+    if (loadGameCodeCount++ > gameUpdateHz * 3) {
+      win64UnloadGameCode(&gameCode);
+      gameCode = win64LoadGameCode();
+      loadGameCodeCount = 0;
+    }
+
     // 清空键盘控制器状态
     game_controller_input *oldController = &oldInput->controller[0];
     game_controller_input *newController = &newInput->controller[0];
@@ -516,7 +563,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.width = globalBackBuffer.width;
     offscreen_buffer.height = globalBackBuffer.height;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
-    gameUpdateAndRender(&gameMemory, newInput, offscreen_buffer);
+    gameCode.updateAndRender(&gameMemory, newInput, offscreen_buffer);
 
     LARGE_INTEGER audioWallClock = win64GetWallClock();
     DWORD fromBeginToAudioSeconds = win64GetSecondsElapsed(flipWallClock, audioWallClock);
@@ -573,7 +620,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       soundBuffer.bufferSize = bytesToWrite / soundOutput.bytesPerSample;
       soundBuffer.buffer = samples;
       soundBuffer.toneVolume = soundOutput.toneVolume;
-      gameGetSoundSamples(&gameMemory, soundBuffer);
+      gameCode.getSoundSamples(&gameMemory, soundBuffer);
 
 #ifdef HANDMADE_INTERNAL
       win64_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];

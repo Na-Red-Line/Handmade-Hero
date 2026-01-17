@@ -1,69 +1,48 @@
-if (Test-Path "build\debug") { Remove-Item -Path "build\debug" -Recurse -Force }
-New-Item -Path "build\debug" -ItemType Directory -Force | Out-Null
-
+# flags
 $DBG = @()
 $WARN = @()
 $MACRO = @()
+$isDLL = $false
 
-foreach ($arg in $args) {
-	if ($arg -eq "-debug") {
-		$DBG = @("-g", "-gcodeview", "-O0")
+switch -Wildcard ($args) {
+	'-clean' {
+		if (Test-Path 'build\debug') { Remove-Item -Recurse -Force 'build\debug' }
+		New-Item -Path 'build\debug' -ItemType Directory -Force | Out-Null
+		exit 0
 	}
-	elseif ($arg -eq "-warn") {
-		$WARN = @(
-			'-Weverything',
-			'-pedantic',
-			'-isystem',
-			'D:/Windows Kits/10/Include/10.0.26100.0/um/',
-			'-isystem',
-			'D:/Windows Kits/10/Include/10.0.26100.0/shared/',
-			'-Wno-c++98-compat',
-			'-Wno-c++98-compat-pedantic',
-			'-Wno-gnu',
-			'-Wno-gnu-anonymous-struct',
-			'-Wno-nested-anon-types',
-			'-Wno-gnu-offsetof-extensions',
-			'-Wno-zero-as-null-pointer-constant',
-			'-Wno-cast-qual', '-Wno-cast-align',
-			'-Wno-old-style-cast',
-			'-Wno-cast-function-type-strict',
-			'-Wno-missing-prototypes',
-			'-Wno-global-constructors',
-			'-Wno-unsafe-buffer-usage',
-			'-Wno-unsafe-buffer-usage-in-libc-call',
-			'-Wno-nonportable-system-include-path'
-		)
-	}
-	elseif ($arg -like "-D*") {
-		# -DHANDMADE_INTERNAL
-		$MACRO += $arg
-	}
+	'-debug' { $DBG = @('-g','-gcodeview','-O0') }
+	'-dll' { $isDLL = $true }
+	'-warn' { $WARN = @(
+			        '-Wall',
+			        '-Wextra',
+			        '-Wshadow',
+			        '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/um/',
+			        '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/shared/'
+							) }
+	default { if ($_ -like '-D*') { $MACRO += $_ } }
 }
 
-$CXXFLAGS = @("-std=gnu++17", "-fno-exceptions", "-fno-rtti")
-$LIBS = @("-luser32", "-lgdi32", "-lXinput", "-lWinmm")
-$XLINKER = @("-Wl,/SUBSYSTEM:WINDOWS,/OPT:REF,/OPT:ICF")
+$CXXFLAGS = @('-std=gnu++17','-fno-exceptions','-fno-rtti')
 
-Get-ChildItem -Recurse -Filter *.cc |
-ForEach-Object { '"{0}"' -f ($_.FullName -replace '\\', '/') } |
-Out-File "build\debug\sources.rsp" -Force
+Push-Location 'build\debug'
 
-Push-Location "build\debug"
+# build flags (concatenate; empty arrays are fine)
+$common = $CXXFLAGS + $DBG + $WARN + $MACRO
 
-$CC = @()
+# find sources from repo path
+$rootPath = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+$winPath = $rootPath + '\winHandmade.cc'
+$handmadePath =  $rootPath + '\handmade.cc'
 
-$CC += $CXXFLAGS
-$CC += $LIBS
-$CC += $XLINKER
-
-if ($DBG.Count -gt 0) { $CC += $DBG }
-if ($WARN.Count -gt 0) { $CC += $WARN }
-if ($MACRO.Count -gt 0) { $CC += $MACRO }
-
-$CC += "@sources.rsp"
-$CC += "-o"
-$CC += "HandmadeHero.exe"
-
-& clang++ @CC
+if (-not $isDLL) {
+	$LIBS = @('-luser32','-lgdi32','-lXinput','-lWinmm')
+	$XLINKER = @('-Wl,/SUBSYSTEM:WINDOWS,/OPT:REF,/OPT:ICF')
+	$CC = $common + $LIBS + $XLINKER + @($winPath,'-o','HandmadeHero.exe')
+	& clang++ $CC
+} else {
+	$XLINKER = @('-Wl,/EXPORT:gameUpdateAndRender,/EXPORT:gameGetSoundSamples')
+	$CC = $common + $XLINKER + @('-shared',$handmadePath,'-o','handmade.dll')
+	& clang++ $CC
+}
 
 Pop-Location

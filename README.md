@@ -61,3 +61,9 @@ Learn about the [Handmade Hero](https://mollyrocket.com/#handmade)
 
 
 ## 游戏手柄死区
+
+## 游戏代码热更新
+
+DLL 链接加载
+
+如果不是静态链接需要注意跨边界内存分配问题

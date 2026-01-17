@@ -1,6 +1,6 @@
 #pragma once
 
-#include "inc.h"
+#include "handmade.h"
 
 #include <dsound.h>
 #include <windows.h>
@@ -41,4 +41,12 @@ struct win64_debug_time_marker {
 
   DWORD flipPlayCursor;
   DWORD flipWriteCursor;
+};
+
+struct win64_game_code {
+  HMODULE gameCodeDLL;
+  game_update_and_render *updateAndRender;
+  game_get_sound_samples *getSoundSamples;
+
+  bool isValid;
 };
