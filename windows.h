@@ -6,7 +6,7 @@
 #include <windows.h>
 #include <Xinput.h>
 
-struct win64_offscreen_buffer {
+struct win_offscreen_buffer {
   BITMAPINFO info;
   VOID *memory;
   int width;
@@ -15,12 +15,12 @@ struct win64_offscreen_buffer {
   int pitch;
 };
 
-struct win64_window_dimension {
+struct win_window_dimension {
   int width;
   int height;
 };
 
-struct win64_sound_output {
+struct win_sound_output {
   uint32 runingSampleIndex; // 索引
   int samplesPerSecond;     // 赫兹
   int toneVolume;           // 音高
@@ -32,7 +32,7 @@ struct win64_sound_output {
   int safetyBytes;          // 每帧缓冲区安全值
 };
 
-struct win64_debug_time_marker {
+struct win_debug_time_marker {
   DWORD outputPlayCursor;
   DWORD outputWriteCursor;
   DWORD outputLocation;
@@ -43,11 +43,25 @@ struct win64_debug_time_marker {
   DWORD flipWriteCursor;
 };
 
-struct win64_game_code {
+struct win_game_code {
   HMODULE gameCodeDLL;
   FILETIME DLLLastWriteTime;
   game_update_and_render *updateAndRender;
   game_get_sound_samples *getSoundSamples;
 
   bool isValid;
+};
+
+// 游戏状态
+struct win_state {
+  // 游戏内存总大小
+  uint64 totalSize;
+  // 内存基址
+  void *gameMemoryBlock;
+
+  HANDLE recordingHandle;
+  int inputRecordingIndex;
+
+  HANDLE playbackHandle;
+  int inputPlayingIndex;
 };

@@ -53,6 +53,7 @@ struct game_offscreen_buffer {
   void *memory;
   int width;
   int height;
+  int pitch;
   int bytesPerPixel;
 };
 
@@ -113,13 +114,23 @@ struct game_state {
   int toneHz;
   // 余弦x轴坐标
   float tSine;
+
+  int playerX;
+  int playerY;
+
+  float tJump;
 };
 
 struct game_memory {
   bool isInitialized;
+
+  // NOTE 永久游戏内存，暂为 game_state
   uint64 permanentStorageSize;
-  // NOTE 游戏内存，暂为 game_state
   void *permanentStorage;
+
+  // NOTE 动态游戏内存，暂为 game_state
+  uint64 transientStorageSize;
+  void *transientStorage;
 
   debug_platform_free_file_memory *debugPlatformFreeFileMemory;
   debug_platform_read_entire_file *debugPlatformReadEntireFile;

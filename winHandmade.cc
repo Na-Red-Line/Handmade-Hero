@@ -7,7 +7,7 @@
 
 static bool globalRuning;
 static bool globalPause;
-static win64_offscreen_buffer globalBackBuffer;
+static win_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 // 每秒计数器递增的次数
 static LONGLONG globalPerfCountFrequency;
@@ -97,8 +97,8 @@ static FILETIME winGetLastWriteTime(char *filename) {
   return lastWriteTime;
 }
 
-static win64_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
-  win64_game_code result = {};
+static win_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
+  win_game_code result = {};
 
   result.DLLLastWriteTime = winGetLastWriteTime(sourceDLLName);
   CopyFileA(sourceDLLName, tempDLLName, FALSE);
@@ -118,7 +118,7 @@ static win64_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
 }
 
 // 动态读取卸载游戏相关代码
-static void winUnloadGameCode(win64_game_code *gameCode) {
+static void winUnloadGameCode(win_game_code *gameCode) {
   if (gameCode->gameCodeDLL) {
     FreeLibrary(gameCode->gameCodeDLL);
     gameCode->gameCodeDLL = 0;
@@ -130,7 +130,7 @@ static void winUnloadGameCode(win64_game_code *gameCode) {
 }
 
 // 初始化音频API
-static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
+static void winLoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
   // Load the dsound library
   HMODULE DSoundLibrary = LoadLibraryA("dsound.dll");
   if (DSoundLibrary)
@@ -181,7 +181,7 @@ static void win64LoadInitDSound(HWND window, int32 samplesPerSecond, int32 buffe
 }
 
 // 初始化手柄控制器API
-static void win64LoadXInput() {
+static void winLoadXInput() {
   HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
   if (!XInputLibrary) XInputLibrary = LoadLibraryA("xinput1_3.dll");
 
@@ -191,11 +191,11 @@ static void win64LoadXInput() {
   }
 }
 
-static win64_window_dimension getWindowDimension(HWND window);
-static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height);
-static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
-static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
-static void win64CleanSoundBuffer(win64_sound_output *soundOutput);
+static win_window_dimension getWindowDimension(HWND window);
+static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int height);
+static void winDisplayBufferInWindow(win_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
+static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
+static void winCleanSoundBuffer(win_sound_output *soundOutput);
 
 static void initPerfCountFrequency() {
   LARGE_INTEGER lpFrequency;
@@ -203,33 +203,87 @@ static void initPerfCountFrequency() {
   globalPerfCountFrequency = lpFrequency.QuadPart;
 }
 
-static LARGE_INTEGER win64GetWallClock() {
+static LARGE_INTEGER winGetWallClock() {
   LARGE_INTEGER result;
   QueryPerformanceCounter(&result);
   return result;
 }
 
-static uint64 win64GetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+static uint64 winGetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
   uint64 counterElapsed = end.QuadPart - start.QuadPart;
   uint64 secondsElapsedForWork = (counterElapsed * 1000) / globalPerfCountFrequency;
   return secondsElapsedForWork;
 }
 
 // 更新手柄按键状态并计算变化数
-static void win64ProcessXInputDigitalButton(game_button_state *newState, game_button_state *oldState, WORD wButtons, DWORD buttonBit) {
+static void winProcessXInputDigitalButton(game_button_state *newState, game_button_state *oldState, WORD wButtons, DWORD buttonBit) {
   newState->endDown = (wButtons & buttonBit) == buttonBit;
   newState->halfTransitionCount = newState->endDown != oldState->endDown;
 }
 
 // 更新键盘状态并计算变化数
-static void win64ProcessKeyboardMessage(game_button_state *newState, bool isDown) {
+static void winProcessKeyboardMessage(game_button_state *newState, bool isDown) {
   // assert(newState->endDown != isDown); TODO 中文输入法拼音异常
   newState->endDown = isDown;
   ++newState->halfTransitionCount;
 }
 
+// 开始录制输入 写入此时的游戏内存快照
+static void winBeginRecordingInput(win_state *winState, int inputRecordingIndex) {
+  winState->inputRecordingIndex = inputRecordingIndex;
+
+  char fileName[] = "foo.hmi";
+  winState->recordingHandle = CreateFileA(fileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
+
+  DWORD bytesWritten;
+  WriteFile(winState->recordingHandle, winState->gameMemoryBlock, winState->totalSize, &bytesWritten, 0);
+}
+
+// 结束录制输入，清理资源
+static void winEndRecordingInput(win_state *winState) {
+  CloseHandle(winState->recordingHandle);
+  winState->inputRecordingIndex = 0;
+}
+
+// 开始回放 游戏状态回到记录开始时
+static void winBeginInputPlayBack(win_state *winState, int inputPlayingIndex) {
+  winState->inputPlayingIndex = inputPlayingIndex;
+
+  char fileName[] = "foo.hmi";
+  winState->playbackHandle = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+
+  DWORD BytesRead;
+  ReadFile(winState->playbackHandle, winState->gameMemoryBlock, winState->totalSize, &BytesRead, 0);
+}
+
+// 结束回放，清理资源
+static void winEndInputPlayBack(win_state *winState) {
+  CloseHandle(winState->playbackHandle);
+  winState->inputPlayingIndex = 0;
+}
+
+// 录制输入数据
+static void winRecordInput(win_state *winState, game_input *newInput) {
+  DWORD bytesWritten;
+  WriteFile(winState->recordingHandle, newInput, sizeof(*newInput), &bytesWritten, 0);
+}
+
+// 回放输入
+static void winPlayBackInput(win_state *winState, game_input *newInput) {
+  DWORD bytesRead = 0;
+  if (ReadFile(winState->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0)) {
+    if (bytesRead == 0) {
+      // NOTE 检测到文件末尾（bytesRead == 0）重新打开文件并从头读取，自动循环回放
+      int PlayingIndex = winState->inputPlayingIndex;
+      winEndInputPlayBack(winState);
+      winBeginInputPlayBack(winState, PlayingIndex);
+      ReadFile(winState->playbackHandle, newInput, sizeof(*newInput), &bytesRead, 0);
+    }
+  }
+}
+
 // 处理windows消息
-static void win64ProcessPendingMessage(game_controller_input *keyboardController) {
+static void winProcessPendingMessage(win_state *winState, game_controller_input *keyboardController) {
   MSG msg;
   while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
 
@@ -249,33 +303,42 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
       // 切换键盘状态才会触发相关事件
       if (wasDown != isDown) {
         if (VKCode == 'W') {
-          win64ProcessKeyboardMessage(&keyboardController->moveUp, isDown);
+          winProcessKeyboardMessage(&keyboardController->moveUp, isDown);
         } else if (VKCode == 'A') {
-          win64ProcessKeyboardMessage(&keyboardController->moveLeft, isDown);
+          winProcessKeyboardMessage(&keyboardController->moveLeft, isDown);
         } else if (VKCode == 'S') {
-          win64ProcessKeyboardMessage(&keyboardController->moveDown, isDown);
+          winProcessKeyboardMessage(&keyboardController->moveDown, isDown);
         } else if (VKCode == 'D') {
-          win64ProcessKeyboardMessage(&keyboardController->moveRight, isDown);
+          winProcessKeyboardMessage(&keyboardController->moveRight, isDown);
         } else if (VKCode == 'Q') {
-          win64ProcessKeyboardMessage(&keyboardController->leftShoulder, isDown);
+          winProcessKeyboardMessage(&keyboardController->leftShoulder, isDown);
         } else if (VKCode == 'E') {
-          win64ProcessKeyboardMessage(&keyboardController->rightShoulder, isDown);
+          winProcessKeyboardMessage(&keyboardController->rightShoulder, isDown);
         } else if (VKCode == VK_UP) {
-          win64ProcessKeyboardMessage(&keyboardController->actionUp, isDown);
+          winProcessKeyboardMessage(&keyboardController->actionUp, isDown);
         } else if (VKCode == VK_LEFT) {
-          win64ProcessKeyboardMessage(&keyboardController->actionLeft, isDown);
+          winProcessKeyboardMessage(&keyboardController->actionLeft, isDown);
         } else if (VKCode == VK_DOWN) {
-          win64ProcessKeyboardMessage(&keyboardController->actionDown, isDown);
+          winProcessKeyboardMessage(&keyboardController->actionDown, isDown);
         } else if (VKCode == VK_RIGHT) {
-          win64ProcessKeyboardMessage(&keyboardController->actionRight, isDown);
+          winProcessKeyboardMessage(&keyboardController->actionRight, isDown);
         } else if (VKCode == VK_ESCAPE) {
-          win64ProcessKeyboardMessage(&keyboardController->start, isDown);
+          winProcessKeyboardMessage(&keyboardController->start, isDown);
         } else if (VKCode == VK_SPACE) {
-          win64ProcessKeyboardMessage(&keyboardController->back, isDown);
+          winProcessKeyboardMessage(&keyboardController->back, isDown);
         }
 #ifdef HANDMADE_INTERNAL
         else if (VKCode == 'P') {
           if (isDown) globalPause = !globalPause;
+        } else if (VKCode == 'L') {
+          if (isDown) {
+            if (winState->inputRecordingIndex == 0) {
+              winBeginRecordingInput(winState, 1);
+            } else {
+              winEndRecordingInput(winState);
+              winBeginInputPlayBack(winState, 1);
+            }
+          }
         }
 #endif
       }
@@ -296,7 +359,7 @@ static void win64ProcessPendingMessage(game_controller_input *keyboardController
 }
 
 // 处理手柄摇杆死区
-static float win64ProcessXInputStickValue(float value, float thumbDeadZone) {
+static float winProcessXInputStickValue(float value, float thumbDeadZone) {
   // 负数最大值
   float maxNegativeThumb = 32768.0f - thumbDeadZone;
   // 正数最大值
@@ -314,7 +377,7 @@ static float win64ProcessXInputStickValue(float value, float thumbDeadZone) {
   }
 }
 
-static void win64DebugDrawVertical(win64_offscreen_buffer *backbuffer, int xOffset, int top, int bottom, uint32 color) {
+static void winDebugDrawVertical(win_offscreen_buffer *backbuffer, int xOffset, int top, int bottom, uint32 color) {
   if (top <= 0) top = 0;
 
   if (bottom > backbuffer->height) bottom = backbuffer->height;
@@ -328,21 +391,21 @@ static void win64DebugDrawVertical(win64_offscreen_buffer *backbuffer, int xOffs
   }
 }
 
-static void win64DrawSoundBufferMarker(win64_offscreen_buffer *backbuffer,
-                                       win64_sound_output *soundOutput,
-                                       float c, int padX, int top, int bottom,
-                                       DWORD value, uint32 color) {
+static void winDrawSoundBufferMarker(win_offscreen_buffer *backbuffer,
+                                     win_sound_output *soundOutput,
+                                     float c, int padX, int top, int bottom,
+                                     DWORD value, uint32 color) {
   float XReal32 = (c * (float)value);
   int xOffset = padX + (int)XReal32;
-  win64DebugDrawVertical(backbuffer, xOffset, top, bottom, color);
+  winDebugDrawVertical(backbuffer, xOffset, top, bottom, color);
 }
 
-void win64DebugSyncDisplay(win64_offscreen_buffer *backbuffer,
-                           int markerCount,
-                           win64_debug_time_marker *markers,
-                           int currentMarkerIndex,
-                           win64_sound_output *soundOutput,
-                           float targetSecondsPerFrame) {
+void winDebugSyncDisplay(win_offscreen_buffer *backbuffer,
+                         int markerCount,
+                         win_debug_time_marker *markers,
+                         int currentMarkerIndex,
+                         win_sound_output *soundOutput,
+                         float targetSecondsPerFrame) {
   int PadX = 16;
   int PadY = 16;
 
@@ -352,7 +415,7 @@ void win64DebugSyncDisplay(win64_offscreen_buffer *backbuffer,
   for (int MarkerIndex = 0;
        MarkerIndex < markerCount;
        ++MarkerIndex) {
-    win64_debug_time_marker *ThisMarker = &markers[MarkerIndex];
+    win_debug_time_marker *ThisMarker = &markers[MarkerIndex];
     assert(ThisMarker->outputPlayCursor < soundOutput->DSoundBufferSize);
     assert(ThisMarker->outputWriteCursor < soundOutput->DSoundBufferSize);
     assert(ThisMarker->outputLocation < soundOutput->DSoundBufferSize);
@@ -373,24 +436,24 @@ void win64DebugSyncDisplay(win64_offscreen_buffer *backbuffer,
 
       int FirstTop = Top;
 
-      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputPlayCursor, PlayColor);
-      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputWriteCursor, WriteColor);
+      winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputPlayCursor, PlayColor);
+      winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputWriteCursor, WriteColor);
 
       Top += LineHeight + PadY;
       Bottom += LineHeight + PadY;
 
-      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation, PlayColor);
-      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation + ThisMarker->outputByteCount, WriteColor);
+      winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation, PlayColor);
+      winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->outputLocation + ThisMarker->outputByteCount, WriteColor);
 
       Top += LineHeight + PadY;
       Bottom += LineHeight + PadY;
 
-      win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, FirstTop, Bottom, ThisMarker->expectedFlipPlayCursor, ExpectedFlipColor);
+      winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, FirstTop, Bottom, ThisMarker->expectedFlipPlayCursor, ExpectedFlipColor);
     }
 
-    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor, PlayColor);
-    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor + 480 * soundOutput->bytesPerSample, PlayWindowColor);
-    win64DrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipWriteCursor, WriteColor);
+    winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor, PlayColor);
+    winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipPlayCursor + 480 * soundOutput->bytesPerSample, PlayWindowColor);
+    winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipWriteCursor, WriteColor);
   }
 }
 
@@ -446,12 +509,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   char tempGameCodeDLLFullPath[MAX_PATH];
   sprintf(tempGameCodeDLLFullPath, "%s%s", EXEFileName, tempGameCodeDLLFilename);
 
-  win64LoadXInput();
+  winLoadXInput();
 
   HDC deviceContext = GetDC(window);
-  win64ResizeDIBSection(&globalBackBuffer, 1280, 720);
+  winResizeDIBSection(&globalBackBuffer, 1280, 720);
 
-  win64_sound_output soundOutput = {};
+  win_sound_output soundOutput = {};
   soundOutput.runingSampleIndex = 0;
   soundOutput.samplesPerSecond = 48000;
   soundOutput.toneVolume = 3000;
@@ -462,19 +525,30 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.latencySampleCount = 3 * (soundOutput.samplesPerSecond / gameUpdateHz);
   soundOutput.safetyBytes = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample / gameUpdateHz) / 3;
 
-  win64LoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
-  win64CleanSoundBuffer(&soundOutput);
+  winLoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
+  winCleanSoundBuffer(&soundOutput);
   globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
   int16 *samples = (int16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
+#if HANDMADE_INTERNAL
+  LPVOID BaseAddress = (LPVOID)TeraBytes(2);
+#else
+  LPVOID BaseAddress = 0;
+#endif
+
   game_memory gameMemory = {};
   gameMemory.isInitialized = false;
-  gameMemory.permanentStorageSize = GigaBytes(4);
-  gameMemory.permanentStorage = VirtualAlloc(0, gameMemory.permanentStorageSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  gameMemory.permanentStorageSize = MegaBytes(64);
+  gameMemory.transientStorageSize = GigaBytes(1);
   gameMemory.debugPlatformFreeFileMemory = debugPlatformFreeFileMemory;
   gameMemory.debugPlatformReadEntireFile = debugPlatformReadEntireFile;
   gameMemory.debugPlatformWriteEntireFile = debugPlatformWriteEntireFile;
+
+  win_state Win32State = {};
+  Win32State.totalSize = gameMemory.permanentStorageSize + gameMemory.transientStorageSize;
+  Win32State.gameMemoryBlock = VirtualAlloc(BaseAddress, Win32State.totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  gameMemory.permanentStorage = Win32State.gameMemoryBlock;
 
   if (!samples || !gameMemory.permanentStorage) {
     // TODO 分配失败
@@ -490,19 +564,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   float audioLatencySeconds = 0;
 
   int debugTimeMarkerIndex = 0;
-  win64_debug_time_marker debugTimeMarkers[gameUpdateHz / 4] = {0};
+  win_debug_time_marker debugTimeMarkers[gameUpdateHz / 4] = {0};
 
   globalRuning = true;
   initPerfCountFrequency();
 
   // 开始计数器
-  LARGE_INTEGER lastCounter = win64GetWallClock();
+  LARGE_INTEGER lastCounter = winGetWallClock();
   // 游戏更新时间
-  LARGE_INTEGER flipWallClock = win64GetWallClock();
+  LARGE_INTEGER flipWallClock = winGetWallClock();
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
 
-  win64_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
+  win_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
 
   while (globalRuning) {
     // 检测DLL文件更新重新读取DLL文件
@@ -521,7 +595,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       newController->Button[buttonIndex].endDown = oldController->Button[buttonIndex].endDown;
     }
 
-    win64ProcessPendingMessage(newController);
+    winProcessPendingMessage(&Win32State, newController);
     newController->isConnected = true;
 
     int minControllerCount = min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
@@ -543,8 +617,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       newController->isAnalog = true;
 
       // 获取摇杆值
-      newController->stickAverageY = win64ProcessXInputStickValue(pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
-      newController->stickAverageX = win64ProcessXInputStickValue(pad->sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+      newController->stickAverageY = winProcessXInputStickValue(pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+      newController->stickAverageX = winProcessXInputStickValue(pad->sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
       // 摇杆模拟控制方向键
       float threshold = 0.5f;
       if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {
@@ -564,24 +638,32 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         newController->isAnalog = false;
       }
 
-      win64ProcessXInputDigitalButton(&newController->moveUp, &oldController->moveUp, oldController->stickAverageY > threshold, 1);
-      win64ProcessXInputDigitalButton(&newController->moveDown, &oldController->moveDown, oldController->stickAverageY < -threshold, 1);
-      win64ProcessXInputDigitalButton(&newController->moveLeft, &oldController->moveLeft, oldController->stickAverageX < -threshold, 1);
-      win64ProcessXInputDigitalButton(&newController->moveRight, &oldController->moveRight, oldController->stickAverageX > threshold, 1);
+      winProcessXInputDigitalButton(&newController->moveUp, &oldController->moveUp, oldController->stickAverageY > threshold, 1);
+      winProcessXInputDigitalButton(&newController->moveDown, &oldController->moveDown, oldController->stickAverageY < -threshold, 1);
+      winProcessXInputDigitalButton(&newController->moveLeft, &oldController->moveLeft, oldController->stickAverageX < -threshold, 1);
+      winProcessXInputDigitalButton(&newController->moveRight, &oldController->moveRight, oldController->stickAverageX > threshold, 1);
 
-      win64ProcessXInputDigitalButton(&newController->actionUp, &oldController->moveUp, pad->wButtons, XINPUT_GAMEPAD_Y);
-      win64ProcessXInputDigitalButton(&newController->actionDown, &oldController->moveDown, pad->wButtons, XINPUT_GAMEPAD_A);
-      win64ProcessXInputDigitalButton(&newController->actionLeft, &oldController->moveLeft, pad->wButtons, XINPUT_GAMEPAD_X);
-      win64ProcessXInputDigitalButton(&newController->actionRight, &oldController->moveRight, pad->wButtons, XINPUT_GAMEPAD_B);
+      winProcessXInputDigitalButton(&newController->actionUp, &oldController->moveUp, pad->wButtons, XINPUT_GAMEPAD_Y);
+      winProcessXInputDigitalButton(&newController->actionDown, &oldController->moveDown, pad->wButtons, XINPUT_GAMEPAD_A);
+      winProcessXInputDigitalButton(&newController->actionLeft, &oldController->moveLeft, pad->wButtons, XINPUT_GAMEPAD_X);
+      winProcessXInputDigitalButton(&newController->actionRight, &oldController->moveRight, pad->wButtons, XINPUT_GAMEPAD_B);
 
-      win64ProcessXInputDigitalButton(&newController->leftShoulder, &oldController->leftShoulder, pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER);
-      win64ProcessXInputDigitalButton(&newController->rightShoulder, &oldController->rightShoulder, pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
+      winProcessXInputDigitalButton(&newController->leftShoulder, &oldController->leftShoulder, pad->wButtons, XINPUT_GAMEPAD_LEFT_SHOULDER);
+      winProcessXInputDigitalButton(&newController->rightShoulder, &oldController->rightShoulder, pad->wButtons, XINPUT_GAMEPAD_RIGHT_SHOULDER);
 
-      win64ProcessXInputDigitalButton(&newController->start, &oldController->start, pad->wButtons, XINPUT_GAMEPAD_START);
-      win64ProcessXInputDigitalButton(&newController->back, &oldController->back, pad->wButtons, XINPUT_GAMEPAD_BACK);
+      winProcessXInputDigitalButton(&newController->start, &oldController->start, pad->wButtons, XINPUT_GAMEPAD_START);
+      winProcessXInputDigitalButton(&newController->back, &oldController->back, pad->wButtons, XINPUT_GAMEPAD_BACK);
 
       newController->isConnected = true;
       if (pad->wButtons & XINPUT_GAMEPAD_B) globalRuning = false;
+    }
+
+    if (Win32State.inputRecordingIndex) {
+      winRecordInput(&Win32State, newInput);
+    }
+
+    if (Win32State.playbackHandle) {
+      winPlayBackInput(&Win32State, newInput);
     }
 
     // 暂停
@@ -597,11 +679,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.memory = globalBackBuffer.memory;
     offscreen_buffer.width = globalBackBuffer.width;
     offscreen_buffer.height = globalBackBuffer.height;
+    offscreen_buffer.pitch = globalBackBuffer.pitch;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
     gameCode.updateAndRender(&gameMemory, newInput, offscreen_buffer);
 
-    LARGE_INTEGER audioWallClock = win64GetWallClock();
-    DWORD fromBeginToAudioSeconds = win64GetSecondsElapsed(flipWallClock, audioWallClock);
+    LARGE_INTEGER audioWallClock = winGetWallClock();
+    DWORD fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
 
     // 控制音频延迟
     DWORD playCursor;  // 当前播放光标
@@ -658,7 +741,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       gameCode.getSoundSamples(&gameMemory, soundBuffer);
 
 #ifdef HANDMADE_INTERNAL
-      win64_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
+      win_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
       marker->outputPlayCursor = playCursor;
       marker->outputWriteCursor = writeCursor;
       marker->outputLocation = byteToLock;
@@ -675,27 +758,27 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
              byteToLock, targetCursor, bytesToWrite, playCursor, writeCursor, audioLatencyBytes, audioLatencySeconds);
 #endif
 
-      win64FillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &soundBuffer);
+      winFillSoundBuffer(&soundOutput, byteToLock, bytesToWrite, &soundBuffer);
     } else {
       soundIsValid = false;
     }
 
-    LARGE_INTEGER endCounter = win64GetWallClock();
+    LARGE_INTEGER endCounter = winGetWallClock();
     // 控制物理逻辑帧
-    uint64 secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, endCounter);
+    uint64 secondsElapsedForWork = winGetSecondsElapsed(lastCounter, endCounter);
     if (secondsElapsedForWork < targetElapsedPerFrame) {
       if (sleepIsGranular) {
         DWORD sleepMS = targetElapsedPerFrame - secondsElapsedForWork;
         if (sleepMS > 0) Sleep(sleepMS);
       }
 
-      uint64 testSecondsElapsedForFrame = win64GetSecondsElapsed(lastCounter, win64GetWallClock());
+      uint64 testSecondsElapsedForFrame = winGetSecondsElapsed(lastCounter, winGetWallClock());
       if (testSecondsElapsedForFrame < targetElapsedPerFrame) {
         // TODO LOG MISSED SLEEP HERE
       }
 
       while (secondsElapsedForWork < targetElapsedPerFrame) {
-        secondsElapsedForWork = win64GetSecondsElapsed(lastCounter, win64GetWallClock());
+        secondsElapsedForWork = winGetSecondsElapsed(lastCounter, winGetWallClock());
       }
     } else {
       // TODO 超过一帧 Logging
@@ -704,7 +787,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     uint64 endCycleCount = __rdtsc();
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
 
-    endCounter = win64GetWallClock();
+    endCounter = winGetWallClock();
     uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
     float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
@@ -715,12 +798,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 
 #ifdef HANDMADE_INTERNAL
-    win64DebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);
+    winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);
 #endif
 
     auto dimension = getWindowDimension(window);
-    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
-    flipWallClock = win64GetWallClock();
+    winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
+    flipWallClock = winGetWallClock();
 
 #ifdef HANDMADE_INTERNAL
     // NOTE: This is debug code
@@ -729,7 +812,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       DWORD writeCursor;
       if (globalDSoundBuffer->GetCurrentPosition(&playCursor, &writeCursor) == DS_OK) {
         assert(debugTimeMarkerIndex < arr_length(debugTimeMarkers));
-        win64_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
+        win_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
         marker->flipPlayCursor = playCursor;
         marker->flipWriteCursor = writeCursor;
       }
@@ -754,8 +837,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   return 0;
 }
 
-static win64_window_dimension getWindowDimension(HWND window) {
-  win64_window_dimension result;
+static win_window_dimension getWindowDimension(HWND window) {
+  win_window_dimension result;
 
   RECT clientRect;
   GetClientRect(window, &clientRect);
@@ -765,9 +848,9 @@ static win64_window_dimension getWindowDimension(HWND window) {
   return result;
 }
 
-static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer,
-                                       HDC deviceContext,
-                                       int windowWidth, int windowHeight) {
+static void winDisplayBufferInWindow(win_offscreen_buffer *buffer,
+                                     HDC deviceContext,
+                                     int windowWidth, int windowHeight) {
   StretchDIBits(deviceContext,
                 0, 0, windowWidth, windowHeight,
                 0, 0, buffer->width, buffer->height,
@@ -776,7 +859,7 @@ static void win64DisplayBufferInWindow(win64_offscreen_buffer *buffer,
                 DIB_RGB_COLORS, SRCCOPY);
 }
 
-static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int height) {
+static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int height) {
 
   // TODO bulletproof this.
   // maybe don't free first, free after, then free first if that fails.
@@ -800,7 +883,7 @@ static void win64ResizeDIBSection(win64_offscreen_buffer *buffer, int width, int
   buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 }
 
-static void win64CleanSoundBuffer(win64_sound_output *soundOutput) {
+static void winCleanSoundBuffer(win_sound_output *soundOutput) {
   VOID *ptr1;
   VOID *ptr2;
   DWORD ptr1Size;
@@ -814,7 +897,7 @@ static void win64CleanSoundBuffer(win64_sound_output *soundOutput) {
   globalDSoundBuffer->Unlock(ptr1, ptr1Size, ptr2, ptr2Size);
 }
 
-static void win64FillSoundBuffer(win64_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer) {
+static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer) {
   // 加锁获取可写内存指针
   VOID *region1;
   VOID *region2;
@@ -871,7 +954,7 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     PAINTSTRUCT paint;
     HDC deviceContext = BeginPaint(window, &paint);
     auto dimension = getWindowDimension(window);
-    win64DisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
+    winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
     EndPaint(window, &paint);
     break;
   }

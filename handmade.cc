@@ -1,6 +1,6 @@
 #include "handmade.h"
 
-void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
+static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
   int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
   float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)gameState->toneHz;
 
@@ -17,7 +17,24 @@ void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *g
   }
 }
 
-void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, int greenOffset) {
+static void renderPlayer(game_offscreen_buffer buffer, int playX, int playY) {
+  uint8 *endOfBuffer = (uint8 *)buffer.memory + buffer.height * buffer.pitch;
+
+  uint32 color = 0xffffffff;
+  int size = 10;
+
+  for (int x = playX; x < playX + size; ++x) {
+    uint8 *pixel = (uint8 *)buffer.memory + playY * buffer.pitch + x * buffer.bytesPerPixel;
+    for (int y = playY; y < playY + size; ++y) {
+      if (pixel >= buffer.memory && (pixel + 4) <= endOfBuffer) {
+        *(uint32 *)pixel = color;
+      }
+      pixel += buffer.pitch;
+    }
+  }
+};
+
+static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, int greenOffset) {
   uint8 *row = (uint8 *)offscreenBuffer.memory;
   int pitch = offscreenBuffer.width * offscreenBuffer.bytesPerPixel;
 
@@ -58,6 +75,11 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 #endif
 
     gameState->toneHz = 256;
+    gameState->tSine = .0f;
+
+    gameState->playerX = 100;
+    gameState->playerY = 100;
+
     memory->isInitialized = true;
   }
 
@@ -76,9 +98,20 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     if (input.actionDown.endDown) {
       gameState->greenOffset += 1;
     }
+
+    gameState->playerX += (int)(4.0f * input.stickAverageX);
+    gameState->playerY -= (int)(4.0f * input.stickAverageY);
+    if (gameState->tJump > 0) {
+      gameState->playerY += int(1.5f * sinf(0.5f * PI * gameState->tJump));
+    }
+    if (input.actionLeft.endDown) {
+      gameState->tJump = 4.0f;
+    }
+    gameState->tJump -= 4.0 / (float)(60 * 2 * arr_length(gameInput->controller));
   }
 
   renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
+  renderPlayer(offscreenBuffer, gameState->playerX, gameState->playerY);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {
