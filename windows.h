@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <Xinput.h>
 
+constexpr int WIN_STATE_FILE_NAME_COUNT = MAX_PATH;
+
 struct win_offscreen_buffer {
   BITMAPINFO info;
   VOID *memory;
@@ -46,6 +48,8 @@ struct win_debug_time_marker {
 struct win_game_code {
   HMODULE gameCodeDLL;
   FILETIME DLLLastWriteTime;
+
+  // 这两个函数都可能为空，调用前必须进行检查
   game_update_and_render *updateAndRender;
   game_get_sound_samples *getSoundSamples;
 
@@ -64,4 +68,7 @@ struct win_state {
 
   HANDLE playbackHandle;
   int inputPlayingIndex;
+
+  char EXEFileName[WIN_STATE_FILE_NAME_COUNT];
+  size_t onePastLastSlashSize;
 };

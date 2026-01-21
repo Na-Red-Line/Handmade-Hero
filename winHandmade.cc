@@ -81,17 +81,49 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debugPlatformWriteEntireFile) {
 }
 #endif
 
+static void winGetEXEFileName(win_state *state) {
+  // 获取主进程当前路径
+  DWORD sizeOfFilename = GetModuleFileNameA(0, state->EXEFileName, sizeof(state->EXEFileName));
+  // 找到最后一个文件分隔符并
+  for (size_t scan = sizeOfFilename - 1; scan > 0; --scan)
+    if (state->EXEFileName[scan] == '\\') {
+      state->onePastLastSlashSize = scan + 1;
+      break;
+    }
+}
+
+static int stringLength(const char *string) {
+  int count = 0;
+  while (*string++) {
+    count++;
+  }
+  return count;
+}
+
+static void winBuildEXEPathFileName(win_state *state, const char *fileName, char *dest) {
+  char *EXEPath = state->EXEFileName;
+  int EXEPathCount = state->onePastLastSlashSize;
+
+  while (EXEPathCount-- > 0) {
+    *dest++ = *EXEPath++;
+  }
+
+  int fileNameCount = stringLength(fileName);
+  while (fileNameCount-- > 0) {
+    *dest++ = *fileName++;
+  }
+  *dest = '\0';
+}
+
 // 动态读取加载游戏相关代码
 // 获取DLL文件最后更新时间，如果发现更新则卸载重读DLL
 // 可以做到一帧延迟更新
 static FILETIME winGetLastWriteTime(char *filename) {
   FILETIME lastWriteTime = {};
 
-  WIN32_FIND_DATAA findData;
-  HANDLE FindHandle = FindFirstFileA(filename, &findData);
-  if (FindHandle != INVALID_HANDLE_VALUE) {
-    lastWriteTime = findData.ftLastWriteTime;
-    FindClose(FindHandle);
+  WIN32_FILE_ATTRIBUTE_DATA data;
+  if (GetFileAttributesExA(filename, GetFileExInfoStandard, &data)) {
+    lastWriteTime = data.ftLastWriteTime;
   }
 
   return lastWriteTime;
@@ -110,8 +142,8 @@ static win_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
   }
 
   if (!result.isValid) {
-    result.updateAndRender = gameUpdateAndRenderStub;
-    result.getSoundSamples = gameGetSoundSamplesStub;
+    result.updateAndRender = nullptr;
+    result.getSoundSamples = nullptr;
   }
 
   return result;
@@ -125,8 +157,8 @@ static void winUnloadGameCode(win_game_code *gameCode) {
   }
 
   gameCode->isValid = false;
-  gameCode->updateAndRender = gameUpdateAndRenderStub;
-  gameCode->getSoundSamples = gameGetSoundSamplesStub;
+  gameCode->updateAndRender = nullptr;
+  gameCode->getSoundSamples = nullptr;
 }
 
 // 初始化音频API
@@ -191,11 +223,96 @@ static void winLoadXInput() {
   }
 }
 
-static win_window_dimension getWindowDimension(HWND window);
-static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int height);
-static void winDisplayBufferInWindow(win_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight);
-static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer);
-static void winCleanSoundBuffer(win_sound_output *soundOutput);
+static win_window_dimension getWindowDimension(HWND window) {
+  win_window_dimension result;
+
+  RECT clientRect;
+  GetClientRect(window, &clientRect);
+  result.width = clientRect.right - clientRect.left;
+  result.height = clientRect.bottom - clientRect.top;
+
+  return result;
+}
+
+static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int height) {
+
+  // TODO bulletproof this.
+  // maybe don't free first, free after, then free first if that fails.
+
+  if (buffer->memory) {
+    VirtualFree(buffer->memory, 0, MEM_RELEASE);
+  }
+
+  buffer->width = width;
+  buffer->height = height;
+
+  buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
+  buffer->info.bmiHeader.biWidth = width;
+  buffer->info.bmiHeader.biHeight = -height; // explain from top to bottom
+  buffer->info.bmiHeader.biPlanes = 1;
+  buffer->info.bmiHeader.biBitCount = 32;
+  buffer->info.bmiHeader.biCompression = BI_RGB;
+
+  int bitmapMemorySize = (width * height) * buffer->bytesPerPixel;
+  buffer->pitch = buffer->width * buffer->bytesPerPixel;
+  buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+}
+
+static void winDisplayBufferInWindow(win_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight) {
+  // 原型开发不进行拉伸，保持像素 1:1
+  StretchDIBits(deviceContext,
+                0, 0, buffer->width, buffer->height,
+                0, 0, buffer->width, buffer->height,
+                buffer->memory,
+                &buffer->info,
+                DIB_RGB_COLORS, SRCCOPY);
+}
+
+static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer) {
+  // 加锁获取可写内存指针
+  VOID *region1;
+  VOID *region2;
+  DWORD region1Size;
+  DWORD region2Size;
+  if (FAILED(globalDSoundBuffer->Lock(byteToLock, bytesToWrite,
+                                      &region1, &region1Size,
+                                      &region2, &region2Size,
+                                      0)))
+    return;
+
+  int16 *buffer = (int16 *)sound_output_buffer->buffer;
+  int16 *sampleOut = (int16 *)region1;
+  DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
+  for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
+    *sampleOut++ = *buffer++;
+    *sampleOut++ = *buffer++;
+    ++soundOutput->runingSampleIndex;
+  }
+
+  sampleOut = (int16 *)region2;
+  DWORD region2SampleCount = region2Size / soundOutput->bytesPerSample;
+  for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
+    *sampleOut++ = *buffer++;
+    *sampleOut++ = *buffer++;
+    ++soundOutput->runingSampleIndex;
+  }
+
+  globalDSoundBuffer->Unlock(region1, region1Size, region2, region2Size);
+}
+
+static void winCleanSoundBuffer(win_sound_output *soundOutput) {
+  VOID *ptr1;
+  VOID *ptr2;
+  DWORD ptr1Size;
+  DWORD ptr2Size;
+  DWORD bytes = soundOutput->DSoundBufferSize;
+  if (FAILED(globalDSoundBuffer->Lock(0, bytes, &ptr1, &ptr1Size, &ptr2, &ptr2Size, 0))) return;
+
+  memset(ptr1, 0, ptr1Size);
+  memset(ptr2, 0, ptr2Size);
+
+  globalDSoundBuffer->Unlock(ptr1, ptr1Size, ptr2, ptr2Size);
+}
 
 static void initPerfCountFrequency() {
   LARGE_INTEGER lpFrequency;
@@ -228,11 +345,18 @@ static void winProcessKeyboardMessage(game_button_state *newState, bool isDown) 
   ++newState->halfTransitionCount;
 }
 
+static void winGetInputFileLocation(win_state *winState, int slotIndex, char *dest) {
+  assert(slotIndex == 1);
+  winBuildEXEPathFileName(winState, "loop_edit.hmi", dest);
+}
+
 // 开始录制输入 写入此时的游戏内存快照
 static void winBeginRecordingInput(win_state *winState, int inputRecordingIndex) {
   winState->inputRecordingIndex = inputRecordingIndex;
 
-  char fileName[] = "foo.hmi";
+  char fileName[WIN_STATE_FILE_NAME_COUNT];
+  winGetInputFileLocation(winState, inputRecordingIndex, fileName);
+
   winState->recordingHandle = CreateFileA(fileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
 
   DWORD bytesWritten;
@@ -249,7 +373,8 @@ static void winEndRecordingInput(win_state *winState) {
 static void winBeginInputPlayBack(win_state *winState, int inputPlayingIndex) {
   winState->inputPlayingIndex = inputPlayingIndex;
 
-  char fileName[] = "foo.hmi";
+  char fileName[WIN_STATE_FILE_NAME_COUNT];
+  winGetInputFileLocation(winState, inputPlayingIndex, fileName);
   winState->playbackHandle = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
   DWORD BytesRead;
@@ -457,8 +582,43 @@ void winDebugSyncDisplay(win_offscreen_buffer *backbuffer,
   }
 }
 
-LRESULT CALLBACK
-WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
+LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+  LRESULT result = 0;
+
+  switch (message) {
+  case WM_SIZE:
+    break;
+
+  case WM_DESTROY:
+    // TODO handle this as an error - recreate window
+    globalRuning = false;
+    break;
+
+  case WM_CLOSE:
+    // TODO handle this with a message to the user
+    globalRuning = false;
+    break;
+
+  case WM_ACTIVATEAPP:
+    OutputDebugStringA("WM_ACTIVATEAPP\n");
+    break;
+
+  case WM_PAINT: {
+    PAINTSTRUCT paint;
+    HDC deviceContext = BeginPaint(window, &paint);
+    auto dimension = getWindowDimension(window);
+    winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
+    EndPaint(window, &paint);
+    break;
+  }
+
+  default:
+    result = DefWindowProc(window, message, wParam, lParam);
+    break;
+  }
+
+  return result;
+}
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, int showCode) {
   WNDCLASS wc = {};
@@ -489,30 +649,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   constexpr UINT desiredSchedulerMS = 1;
   bool sleepIsGranular = timeBeginPeriod(desiredSchedulerMS) == TIMERR_STRUCT;
 
+  win_state winState = {};
+
   // 初始化游戏DDL
   // 获取主进程当前路径
-  char EXEFileName[MAX_PATH];
-  DWORD sizeOfFilename = GetModuleFileNameA(0, EXEFileName, sizeof(EXEFileName));
-  // 找到最后一个文件分隔符并设置为'\0'
-  size_t onePastLastSlashSize = sizeOfFilename - 1;
-  for (; onePastLastSlashSize > 0; --onePastLastSlashSize)
-    if (EXEFileName[onePastLastSlashSize] == '\\') {
-      EXEFileName[onePastLastSlashSize + 1] = '\0';
-      break;
-    }
+  winGetEXEFileName(&winState);
 
-  char sourceGameCodeDLLFilename[] = "handmade.dll";
-  char sourceGameCodeDLLFullPath[MAX_PATH];
-  sprintf(sourceGameCodeDLLFullPath, "%s%s", EXEFileName, sourceGameCodeDLLFilename);
+  char sourceGameCodeDLLFullPath[WIN_STATE_FILE_NAME_COUNT];
+  winBuildEXEPathFileName(&winState, "handmade.dll", sourceGameCodeDLLFullPath);
 
-  char tempGameCodeDLLFilename[] = "handmade_temp.dll";
-  char tempGameCodeDLLFullPath[MAX_PATH];
-  sprintf(tempGameCodeDLLFullPath, "%s%s", EXEFileName, tempGameCodeDLLFilename);
+  char tempGameCodeDLLFullPath[WIN_STATE_FILE_NAME_COUNT];
+  winBuildEXEPathFileName(&winState, "handmade_temp.dll", tempGameCodeDLLFullPath);
 
   winLoadXInput();
 
   HDC deviceContext = GetDC(window);
-  winResizeDIBSection(&globalBackBuffer, 1280, 720);
+  winResizeDIBSection(&globalBackBuffer, 1920, 1080);
 
   win_sound_output soundOutput = {};
   soundOutput.runingSampleIndex = 0;
@@ -545,10 +697,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   gameMemory.debugPlatformReadEntireFile = debugPlatformReadEntireFile;
   gameMemory.debugPlatformWriteEntireFile = debugPlatformWriteEntireFile;
 
-  win_state Win32State = {};
-  Win32State.totalSize = gameMemory.permanentStorageSize + gameMemory.transientStorageSize;
-  Win32State.gameMemoryBlock = VirtualAlloc(BaseAddress, Win32State.totalSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-  gameMemory.permanentStorage = Win32State.gameMemoryBlock;
+  winState.totalSize = gameMemory.permanentStorageSize + gameMemory.transientStorageSize;
+  // TODO 使用大型页面支持分配内存
+  winState.gameMemoryBlock = VirtualAlloc(BaseAddress, winState.totalSize,
+                                          MEM_RESERVE | MEM_COMMIT,
+                                          PAGE_READWRITE);
+  gameMemory.permanentStorage = winState.gameMemoryBlock;
 
   if (!samples || !gameMemory.permanentStorage) {
     // TODO 分配失败
@@ -595,7 +749,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       newController->Button[buttonIndex].endDown = oldController->Button[buttonIndex].endDown;
     }
 
-    winProcessPendingMessage(&Win32State, newController);
+    winProcessPendingMessage(&winState, newController);
     newController->isConnected = true;
 
     int minControllerCount = min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
@@ -614,11 +768,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       }
 
       XINPUT_GAMEPAD *pad = &state.Gamepad;
-      newController->isAnalog = true;
+      // 维持上一帧的模拟输入类型
+      newController->isAnalog = oldController->isAnalog;
 
       // 获取摇杆值
       newController->stickAverageY = winProcessXInputStickValue(pad->sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
       newController->stickAverageX = winProcessXInputStickValue(pad->sThumbLX, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE);
+
+      if (newController->stickAverageY != 0.0f || newController->stickAverageX != 0.0f) {
+        newController->isAnalog = true;
+      }
+
       // 摇杆模拟控制方向键
       float threshold = 0.5f;
       if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {
@@ -658,12 +818,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       if (pad->wButtons & XINPUT_GAMEPAD_B) globalRuning = false;
     }
 
-    if (Win32State.inputRecordingIndex) {
-      winRecordInput(&Win32State, newInput);
+    if (winState.inputRecordingIndex) {
+      winRecordInput(&winState, newInput);
     }
 
-    if (Win32State.playbackHandle) {
-      winPlayBackInput(&Win32State, newInput);
+    if (winState.playbackHandle) {
+      winPlayBackInput(&winState, newInput);
     }
 
     // 暂停
@@ -681,7 +841,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.height = globalBackBuffer.height;
     offscreen_buffer.pitch = globalBackBuffer.pitch;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
-    gameCode.updateAndRender(&gameMemory, newInput, offscreen_buffer);
+    if (gameCode.updateAndRender) {
+      gameCode.updateAndRender(&gameMemory, newInput, offscreen_buffer);
+    }
 
     LARGE_INTEGER audioWallClock = winGetWallClock();
     DWORD fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
@@ -705,7 +867,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       // 预期剩余时间可以写入的字节
       DWORD expectedBytesUntilFlip = (DWORD)(((float)secondsLeftUntilFlip / (float)targetElapsedPerFrame) * (float)expectedSoundBytesPerFrame);
       // 预期写入的边界
-      DWORD expectedFrameBoundaryByte = playCursor + expectedSoundBytesPerFrame;
+      DWORD expectedFrameBoundaryByte = playCursor + expectedBytesUntilFlip;
 
       // 安全光标
       DWORD safeWriteCursor = writeCursor;
@@ -738,7 +900,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       soundBuffer.bufferSize = bytesToWrite / soundOutput.bytesPerSample;
       soundBuffer.buffer = samples;
       soundBuffer.toneVolume = soundOutput.toneVolume;
-      gameCode.getSoundSamples(&gameMemory, soundBuffer);
+      if (gameCode.getSoundSamples) {
+        gameCode.getSoundSamples(&gameMemory, soundBuffer);
+      }
 
 #ifdef HANDMADE_INTERNAL
       win_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
@@ -835,134 +999,4 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   }
 
   return 0;
-}
-
-static win_window_dimension getWindowDimension(HWND window) {
-  win_window_dimension result;
-
-  RECT clientRect;
-  GetClientRect(window, &clientRect);
-  result.width = clientRect.right - clientRect.left;
-  result.height = clientRect.bottom - clientRect.top;
-
-  return result;
-}
-
-static void winDisplayBufferInWindow(win_offscreen_buffer *buffer,
-                                     HDC deviceContext,
-                                     int windowWidth, int windowHeight) {
-  StretchDIBits(deviceContext,
-                0, 0, windowWidth, windowHeight,
-                0, 0, buffer->width, buffer->height,
-                buffer->memory,
-                &buffer->info,
-                DIB_RGB_COLORS, SRCCOPY);
-}
-
-static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int height) {
-
-  // TODO bulletproof this.
-  // maybe don't free first, free after, then free first if that fails.
-
-  if (buffer->memory) {
-    VirtualFree(buffer->memory, 0, MEM_RELEASE);
-  }
-
-  buffer->width = width;
-  buffer->height = height;
-
-  buffer->info.bmiHeader.biSize = sizeof(buffer->info.bmiHeader);
-  buffer->info.bmiHeader.biWidth = width;
-  buffer->info.bmiHeader.biHeight = -height; // explain from top to bottom
-  buffer->info.bmiHeader.biPlanes = 1;
-  buffer->info.bmiHeader.biBitCount = 32;
-  buffer->info.bmiHeader.biCompression = BI_RGB;
-
-  int bitmapMemorySize = (width * height) * buffer->bytesPerPixel;
-  buffer->pitch = buffer->width * buffer->bytesPerPixel;
-  buffer->memory = VirtualAlloc(0, bitmapMemorySize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-}
-
-static void winCleanSoundBuffer(win_sound_output *soundOutput) {
-  VOID *ptr1;
-  VOID *ptr2;
-  DWORD ptr1Size;
-  DWORD ptr2Size;
-  DWORD bytes = soundOutput->DSoundBufferSize;
-  if (FAILED(globalDSoundBuffer->Lock(0, bytes, &ptr1, &ptr1Size, &ptr2, &ptr2Size, 0))) return;
-
-  memset(ptr1, 0, ptr1Size);
-  memset(ptr2, 0, ptr2Size);
-
-  globalDSoundBuffer->Unlock(ptr1, ptr1Size, ptr2, ptr2Size);
-}
-
-static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, DWORD bytesToWrite, game_sound_output_buffer *sound_output_buffer) {
-  // 加锁获取可写内存指针
-  VOID *region1;
-  VOID *region2;
-  DWORD region1Size;
-  DWORD region2Size;
-  if (FAILED(globalDSoundBuffer->Lock(byteToLock, bytesToWrite,
-                                      &region1, &region1Size,
-                                      &region2, &region2Size,
-                                      0)))
-    return;
-
-  int16 *buffer = (int16 *)sound_output_buffer->buffer;
-  int16 *sampleOut = (int16 *)region1;
-  DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
-  for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
-    *sampleOut++ = *buffer++;
-    *sampleOut++ = *buffer++;
-    ++soundOutput->runingSampleIndex;
-  }
-
-  sampleOut = (int16 *)region2;
-  DWORD region2SampleCount = region2Size / soundOutput->bytesPerSample;
-  for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
-    *sampleOut++ = *buffer++;
-    *sampleOut++ = *buffer++;
-    ++soundOutput->runingSampleIndex;
-  }
-
-  globalDSoundBuffer->Unlock(region1, region1Size, region2, region2Size);
-}
-
-LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
-  LRESULT result = 0;
-
-  switch (message) {
-  case WM_SIZE:
-    break;
-
-  case WM_DESTROY:
-    // TODO handle this as an error - recreate window
-    globalRuning = false;
-    break;
-
-  case WM_CLOSE:
-    // TODO handle this with a message to the user
-    globalRuning = false;
-    break;
-
-  case WM_ACTIVATEAPP:
-    OutputDebugStringA("WM_ACTIVATEAPP\n");
-    break;
-
-  case WM_PAINT: {
-    PAINTSTRUCT paint;
-    HDC deviceContext = BeginPaint(window, &paint);
-    auto dimension = getWindowDimension(window);
-    winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
-    EndPaint(window, &paint);
-    break;
-  }
-
-  default:
-    result = DefWindowProc(window, message, wParam, lParam);
-    break;
-  }
-
-  return result;
 }

@@ -40,10 +40,10 @@ struct debug_read_file_result {
 #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
 typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
-#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(char *filename)
+#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(const char *filename)
 typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
 
-#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(char *filename, uint32 memorySize, void *memory)
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(const char *filename, uint32 memorySize, void *memory)
 typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 
 #endif
@@ -140,8 +140,6 @@ struct game_memory {
 // 动态链接加载方法
 #define GAME_UPDATE_AND_RENDER(name) void name(game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-GAME_UPDATE_AND_RENDER(gameUpdateAndRenderStub) {} // NOLINT
 
 #define GAME_GET_SOUND_SAMPLES(name) void name(game_memory *memory, game_sound_output_buffer soundOutputBuffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
-GAME_GET_SOUND_SAMPLES(gameGetSoundSamplesStub) {} // NOLINT

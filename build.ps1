@@ -43,7 +43,7 @@ if (-not $isDLL) {
 	$XLINKER = @('-Wl,/EXPORT:gameUpdateAndRender,/EXPORT:gameGetSoundSamples')
 
 	# pass PDB name to linker so the binary references the unique PDB
-	$pdbName = "handmade_$((Get-Date).ToString('yyyyMMdd_HHmmss')).pdb"
+	$pdbName = "handmade_$(Get-Random).pdb"
 	$XLINKER += @('-Wl,/PDB:' + $pdbName)
 
 	$CC = $common + $XLINKER + @('-shared',$handmadePath,'-o','handmade.dll')

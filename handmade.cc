@@ -64,10 +64,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   if (!memory->isInitialized) {
 #if HANDMADE_INTERNAL
     if (!isWrite) {
-      char *filename = (char *)__FILE__;
+      char filename[] = __FILE__;
       auto result = memory->debugPlatformReadEntireFile(filename);
       if (result.contents) {
-        memory->debugPlatformWriteEntireFile((char *)"test.out", result.fileSize, result.contents);
+        memory->debugPlatformWriteEntireFile("test.out", result.fileSize, result.contents);
         memory->debugPlatformFreeFileMemory(result.contents);
       }
       isWrite = true;
