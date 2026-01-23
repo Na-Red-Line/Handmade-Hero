@@ -31,7 +31,7 @@ DIRECT_SOUND_CREATE(directSoundCreate) { return 0; }
 static direct_sound_create *DirectSoundCreate_ = directSoundCreate;
 #define DirectSoundCreate DirectSoundCreate_
 
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
 DEBUG_PLATFORM_FREE_FILE_MEMORY(debugPlatformFreeFileMemory) {
   if (memory) VirtualFree(memory, 0, 0);
 }
@@ -54,7 +54,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(debugPlatformReadEntireFile) {
   if (ReadFile(fileHandle, result.contents, result.fileSize, &bytesRead, 0) && result.fileSize == bytesRead) {
     // NOTE 读取成功
   } else {
-    debugPlatformFreeFileMemory(result.contents);
+    debugPlatformFreeFileMemory(thread, result.contents);
     result.contents = nullptr;
   }
 
@@ -340,9 +340,10 @@ static void winProcessXInputDigitalButton(game_button_state *newState, game_butt
 
 // 更新键盘状态并计算变化数
 static void winProcessKeyboardMessage(game_button_state *newState, bool isDown) {
-  // assert(newState->endDown != isDown); TODO 中文输入法拼音异常
-  newState->endDown = isDown;
-  ++newState->halfTransitionCount;
+  if (newState->endDown != isDown) {
+    newState->endDown = isDown;
+    ++newState->halfTransitionCount;
+  }
 }
 
 static void winGetInputFileLocation(win_state *winState, int slotIndex, char *dest) {
@@ -452,7 +453,7 @@ static void winProcessPendingMessage(win_state *winState, game_controller_input 
         } else if (VKCode == VK_SPACE) {
           winProcessKeyboardMessage(&keyboardController->back, isDown);
         }
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
         else if (VKCode == 'P') {
           if (isDown) globalPause = !globalPause;
         } else if (VKCode == 'L') {
@@ -639,12 +640,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                 instance,
                                 0);
   if (!window) return 0;
-  // 显示器帧数
-  constexpr uint16 monitorRefresHz = 144;
-  // 游戏物理逻辑帧
-  constexpr uint16 gameUpdateHz = 60;
-  // 每帧的时间
-  constexpr uint16 targetElapsedPerFrame = 1000 / gameUpdateHz;
+
   // 设置windows调度粒度(ms)用来更精细地控制睡眠
   constexpr UINT desiredSchedulerMS = 1;
   bool sleepIsGranular = timeBeginPeriod(desiredSchedulerMS) == TIMERR_STRUCT;
@@ -666,6 +662,17 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   HDC deviceContext = GetDC(window);
   winResizeDIBSection(&globalBackBuffer, 1920, 1080);
 
+  // 获取当前设备屏幕刷新率
+  int monitorRefresHz = 144;
+  int winRefreshRate = GetDeviceCaps(deviceContext, VREFRESH);
+  if (winRefreshRate > 1) {
+    monitorRefresHz = winRefreshRate;
+  }
+  // 游戏物理逻辑帧
+  int gameUpdateHz = monitorRefresHz / 2;
+  // 每帧的时间
+  int targetElapsedPerFrame = 1000 / gameUpdateHz;
+
   win_sound_output soundOutput = {};
   soundOutput.runingSampleIndex = 0;
   soundOutput.samplesPerSecond = 48000;
@@ -674,8 +681,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
   soundOutput.bytesPerSample = sizeof(int16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
-  soundOutput.latencySampleCount = 3 * (soundOutput.samplesPerSecond / gameUpdateHz);
-  soundOutput.safetyBytes = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample / gameUpdateHz) / 3;
+  soundOutput.safetyBytes = (int)((float)soundOutput.DSoundBufferSize / (float)gameUpdateHz / 2.0f);
 
   winLoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   winCleanSoundBuffer(&soundOutput);
@@ -717,8 +723,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   DWORD audioLatencyBytes = 0;
   float audioLatencySeconds = 0;
 
+#if HANDMADE_INTERNAL
   int debugTimeMarkerIndex = 0;
-  win_debug_time_marker debugTimeMarkers[gameUpdateHz / 4] = {0};
+  win_debug_time_marker debugTimeMarkers[30] = {0};
+#endif
 
   globalRuning = true;
   initPerfCountFrequency();
@@ -835,6 +843,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     XInputSetState(0, &vibration);
 #endif
 
+    // 线程上下文
+    thread_context thread = {};
+
     game_offscreen_buffer offscreen_buffer = {};
     offscreen_buffer.memory = globalBackBuffer.memory;
     offscreen_buffer.width = globalBackBuffer.width;
@@ -842,7 +853,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.pitch = globalBackBuffer.pitch;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
     if (gameCode.updateAndRender) {
-      gameCode.updateAndRender(&gameMemory, newInput, offscreen_buffer);
+      gameCode.updateAndRender(&thread, &gameMemory, newInput, offscreen_buffer);
     }
 
     LARGE_INTEGER audioWallClock = winGetWallClock();
@@ -901,10 +912,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       soundBuffer.buffer = samples;
       soundBuffer.toneVolume = soundOutput.toneVolume;
       if (gameCode.getSoundSamples) {
-        gameCode.getSoundSamples(&gameMemory, soundBuffer);
+        gameCode.getSoundSamples(&thread, &gameMemory, soundBuffer);
       }
 
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
       win_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
       marker->outputPlayCursor = playCursor;
       marker->outputWriteCursor = writeCursor;
@@ -961,7 +972,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     float MCPF = (float)cycleCounterElapsed / 10000.f;
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
     winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);
 #endif
 
@@ -969,7 +980,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
     flipWallClock = winGetWallClock();
 
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
     // NOTE: This is debug code
     {
       DWORD playCursor;
@@ -990,7 +1001,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     newInput = oldInput;
     oldInput = temp;
 
-#ifdef HANDMADE_INTERNAL
+#if HANDMADE_INTERNAL
     ++debugTimeMarkerIndex;
     if (debugTimeMarkerIndex == arr_length(debugTimeMarkers)) {
       debugTimeMarkerIndex = 0;

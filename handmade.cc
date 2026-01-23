@@ -65,10 +65,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 #if HANDMADE_INTERNAL
     if (!isWrite) {
       char filename[] = __FILE__;
-      auto result = memory->debugPlatformReadEntireFile(filename);
+      auto result = memory->debugPlatformReadEntireFile(thread, filename);
       if (result.contents) {
-        memory->debugPlatformWriteEntireFile("test.out", result.fileSize, result.contents);
-        memory->debugPlatformFreeFileMemory(result.contents);
+        memory->debugPlatformWriteEntireFile(thread, "test.out", result.fileSize, result.contents);
+        memory->debugPlatformFreeFileMemory(thread, result.contents);
       }
       isWrite = true;
     }
