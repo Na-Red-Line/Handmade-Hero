@@ -142,9 +142,11 @@ struct game_memory {
   uint64 transientStorageSize;
   void *transientStorage;
 
+#if HANDMADE_INTERNAL
   debug_platform_free_file_memory *debugPlatformFreeFileMemory;
   debug_platform_read_entire_file *debugPlatformReadEntireFile;
   debug_platform_write_entire_file *debugPlatformWriteEntireFile;
+#endif
 };
 
 // 动态链接加载方法

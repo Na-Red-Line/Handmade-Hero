@@ -7,6 +7,7 @@
 
 static bool globalRuning;
 static bool globalPause;
+static bool globalMouseOn;
 static win_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 // 每秒计数器递增的次数
@@ -346,22 +347,30 @@ static void winProcessKeyboardMessage(game_button_state *newState, bool isDown) 
   }
 }
 
-static void winGetInputFileLocation(win_state *winState, int slotIndex, char *dest) {
-  assert(slotIndex == 1);
-  winBuildEXEPathFileName(winState, "loop_edit.hmi", dest);
+static void winGetInputFileLocation(win_state *winState, bool inputStream, int slotIndex, char *dest) {
+  char temp[64];
+  sprintf(temp, "loop_edit_%d_%s.hmi", slotIndex, inputStream ? "input" : "state");
+  winBuildEXEPathFileName(winState, temp, dest);
+}
+
+static win_replay_buffer *winGetReplayBuffer(win_state *state, unsigned index) {
+  assert(index < arr_length(state->replayBuffers));
+  win_replay_buffer *result = &state->replayBuffers[index];
+  return result;
 }
 
 // 开始录制输入 写入此时的游戏内存快照
-static void winBeginRecordingInput(win_state *winState, int inputRecordingIndex) {
-  winState->inputRecordingIndex = inputRecordingIndex;
+static void winBeginRecordingInput(win_state *state, int inputRecordingIndex) {
+  win_replay_buffer *replayBuffer = winGetReplayBuffer(state, inputRecordingIndex);
+  if (!replayBuffer->memoryBlock) return;
+
+  state->inputRecordingIndex = inputRecordingIndex;
 
   char fileName[WIN_STATE_FILE_NAME_COUNT];
-  winGetInputFileLocation(winState, inputRecordingIndex, fileName);
+  winGetInputFileLocation(state, true, inputRecordingIndex, fileName);
+  state->recordingHandle = CreateFileA(fileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
 
-  winState->recordingHandle = CreateFileA(fileName, GENERIC_WRITE, 0, 0, CREATE_ALWAYS, 0, 0);
-
-  DWORD bytesWritten;
-  WriteFile(winState->recordingHandle, winState->gameMemoryBlock, winState->totalSize, &bytesWritten, 0);
+  CopyMemory(replayBuffer->memoryBlock, state->gameMemoryBlock, state->totalSize);
 }
 
 // 结束录制输入，清理资源
@@ -371,15 +380,17 @@ static void winEndRecordingInput(win_state *winState) {
 }
 
 // 开始回放 游戏状态回到记录开始时
-static void winBeginInputPlayBack(win_state *winState, int inputPlayingIndex) {
-  winState->inputPlayingIndex = inputPlayingIndex;
+static void winBeginInputPlayBack(win_state *state, int inputPlayingIndex) {
+  win_replay_buffer *replayBuffer = winGetReplayBuffer(state, inputPlayingIndex);
+  if (!replayBuffer->memoryBlock) return;
+
+  state->inputPlayingIndex = inputPlayingIndex;
 
   char fileName[WIN_STATE_FILE_NAME_COUNT];
-  winGetInputFileLocation(winState, inputPlayingIndex, fileName);
-  winState->playbackHandle = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+  winGetInputFileLocation(state, true, inputPlayingIndex, fileName);
+  state->playbackHandle = CreateFileA(fileName, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
 
-  DWORD BytesRead;
-  ReadFile(winState->playbackHandle, winState->gameMemoryBlock, winState->totalSize, &BytesRead, 0);
+  CopyMemory(state->gameMemoryBlock, replayBuffer->memoryBlock, state->totalSize);
 }
 
 // 结束回放，清理资源
@@ -409,7 +420,7 @@ static void winPlayBackInput(win_state *winState, game_input *newInput) {
 }
 
 // 处理windows消息
-static void winProcessPendingMessage(win_state *winState, game_controller_input *keyboardController) {
+static void winProcessPendingMessage(win_state *state, game_controller_input *keyboardController) {
   MSG msg;
   while (PeekMessageA(&msg, 0, 0, 0, PM_REMOVE)) {
 
@@ -452,17 +463,23 @@ static void winProcessPendingMessage(win_state *winState, game_controller_input 
           winProcessKeyboardMessage(&keyboardController->start, isDown);
         } else if (VKCode == VK_SPACE) {
           winProcessKeyboardMessage(&keyboardController->back, isDown);
+        } else if (VKCode == 'V') {
+          if (isDown) globalMouseOn = !globalMouseOn;
         }
-#if HANDMADE_INTERNAL
+#if RECORD
         else if (VKCode == 'P') {
           if (isDown) globalPause = !globalPause;
         } else if (VKCode == 'L') {
           if (isDown) {
-            if (winState->inputRecordingIndex == 0) {
-              winBeginRecordingInput(winState, 1);
+            if (state->inputPlayingIndex == 0) {
+              if (state->inputRecordingIndex == 0) {
+                winBeginRecordingInput(state, 1);
+              } else {
+                winEndRecordingInput(state);
+                winBeginInputPlayBack(state, 1);
+              }
             } else {
-              winEndRecordingInput(winState);
-              winBeginInputPlayBack(winState, 1);
+              winEndInputPlayBack(state);
             }
           }
         }
@@ -503,6 +520,7 @@ static float winProcessXInputStickValue(float value, float thumbDeadZone) {
   }
 }
 
+#if HANDMADE_INTERNAL
 static void winDebugDrawVertical(win_offscreen_buffer *backbuffer, int xOffset, int top, int bottom, uint32 color) {
   if (top <= 0) top = 0;
 
@@ -582,6 +600,7 @@ void winDebugSyncDisplay(win_offscreen_buffer *backbuffer,
     winDrawSoundBufferMarker(backbuffer, soundOutput, C, PadX, Top, Bottom, ThisMarker->flipWriteCursor, WriteColor);
   }
 }
+#endif
 
 LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
   LRESULT result = 0;
@@ -699,9 +718,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   gameMemory.isInitialized = false;
   gameMemory.permanentStorageSize = MegaBytes(64);
   gameMemory.transientStorageSize = GigaBytes(1);
+
+#if HANDMADE_INTERNAL
   gameMemory.debugPlatformFreeFileMemory = debugPlatformFreeFileMemory;
   gameMemory.debugPlatformReadEntireFile = debugPlatformReadEntireFile;
   gameMemory.debugPlatformWriteEntireFile = debugPlatformWriteEntireFile;
+#endif
 
   winState.totalSize = gameMemory.permanentStorageSize + gameMemory.transientStorageSize;
   // TODO 使用大型页面支持分配内存
@@ -709,6 +731,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                           MEM_RESERVE | MEM_COMMIT,
                                           PAGE_READWRITE);
   gameMemory.permanentStorage = winState.gameMemoryBlock;
+
+  for (int replayIndex = 0; replayIndex < arr_length(winState.replayBuffers); ++replayIndex) {
+    win_replay_buffer *replayBuffer = &winState.replayBuffers[replayIndex];
+
+    winGetInputFileLocation(&winState, false, replayIndex, replayBuffer->filename);
+    replayBuffer->fileHandle = CreateFileA(replayBuffer->filename, GENERIC_WRITE | GENERIC_READ, 0, 0, CREATE_ALWAYS, 0, 0);
+
+    LARGE_INTEGER MaxSize;
+    MaxSize.QuadPart = winState.totalSize;
+    replayBuffer->memoryMap = CreateFileMapping(replayBuffer->fileHandle, 0, PAGE_READWRITE, MaxSize.HighPart, MaxSize.LowPart, 0);
+    replayBuffer->memoryBlock = MapViewOfFile(replayBuffer->memoryMap, FILE_MAP_ALL_ACCESS, 0, 0, winState.totalSize);
+    if (replayBuffer->memoryBlock) {
+    } else {
+      // TODO(casey): Diagnostic
+    }
+  }
 
   if (!samples || !gameMemory.permanentStorage) {
     // TODO 分配失败
@@ -759,6 +797,21 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     winProcessPendingMessage(&winState, newController);
     newController->isConnected = true;
+
+    // 启动鼠标检测
+    if (globalMouseOn) {
+      POINT mouseP;
+      GetCursorPos(&mouseP);
+      ScreenToClient(window, &mouseP);
+      newInput->mouseX = mouseP.x;
+      newInput->mouseY = mouseP.y;
+      newInput->mouseZ = 0;
+      winProcessKeyboardMessage(&newInput->mouseButtons[0], GetKeyState(VK_LBUTTON) & (1 << 15));
+      winProcessKeyboardMessage(&newInput->mouseButtons[1], GetKeyState(VK_MBUTTON) & (1 << 15));
+      winProcessKeyboardMessage(&newInput->mouseButtons[2], GetKeyState(VK_RBUTTON) & (1 << 15));
+      winProcessKeyboardMessage(&newInput->mouseButtons[3], GetKeyState(VK_XBUTTON1) & (1 << 15));
+      winProcessKeyboardMessage(&newInput->mouseButtons[4], GetKeyState(VK_XBUTTON2) & (1 << 15));
+    }
 
     int minControllerCount = min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
     // 第零个控制器是键盘
@@ -961,8 +1014,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     uint64 endCycleCount = __rdtsc();
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
-
     endCounter = winGetWallClock();
+
+#if HANDMADE_INTERNAL
     uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
     float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
@@ -971,6 +1025,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     // 一帧CPU执行了多少万条指令
     float MCPF = (float)cycleCounterElapsed / 10000.f;
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
+#endif
 
 #if HANDMADE_INTERNAL
     winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);

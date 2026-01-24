@@ -55,12 +55,20 @@ struct win_game_code {
   bool isValid;
 };
 
+struct win_replay_buffer {
+  HANDLE fileHandle;
+  HANDLE memoryMap;
+  char filename[WIN_STATE_FILE_NAME_COUNT];
+  void *memoryBlock;
+};
+
 // 游戏状态
 struct win_state {
   // 游戏内存总大小
   uint64 totalSize;
   // 内存基址
   void *gameMemoryBlock;
+  win_replay_buffer replayBuffers[4];
 
   HANDLE recordingHandle;
   int inputRecordingIndex;

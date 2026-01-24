@@ -64,7 +64,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   if (!memory->isInitialized) {
 #if HANDMADE_INTERNAL
     if (!isWrite) {
-      char filename[] = __FILE__;
+      const char *filename = __FILE__;
       auto result = memory->debugPlatformReadEntireFile(thread, filename);
       if (result.contents) {
         memory->debugPlatformWriteEntireFile(thread, "test.out", result.fileSize, result.contents);
@@ -112,6 +112,12 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
   renderPlayer(offscreenBuffer, gameState->playerX, gameState->playerY);
+
+  renderPlayer(offscreenBuffer, gameInput->mouseX, gameInput->mouseY);
+  for (int mouseInputIndex = 0; mouseInputIndex < arr_length(gameInput->mouseButtons); ++mouseInputIndex) {
+    if (gameInput->mouseButtons[mouseInputIndex].endDown)
+      renderPlayer(offscreenBuffer, 10 + 20 * mouseInputIndex, 10);
+  }
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {
