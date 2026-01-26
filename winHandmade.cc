@@ -755,6 +755,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   game_input input[2] = {};
   game_input *newInput = &input[0];
   game_input *oldInput = &input[1];
+  newInput->secondsToAdvanceOverUpdate = targetElapsedPerFrame;
 
   DWORD lastPlayCursor = 0;
   bool soundIsValid = false;
@@ -906,7 +907,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     offscreen_buffer.pitch = globalBackBuffer.pitch;
     offscreen_buffer.bytesPerPixel = globalBackBuffer.bytesPerPixel;
     if (gameCode.updateAndRender) {
-      gameCode.updateAndRender(&thread, &gameMemory, newInput, offscreen_buffer);
+      gameCode.updateAndRender(&thread, &gameMemory, newInput, &offscreen_buffer);
     }
 
     LARGE_INTEGER audioWallClock = winGetWallClock();

@@ -2,38 +2,32 @@
 
 static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
   int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
+
+#if 0
   float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)gameState->toneHz;
+#endif
 
   for (int sampleIndex = 0; sampleIndex < soundOutputBuffer.bufferSize; ++sampleIndex) {
-    float sineValue = sinf(gameState->tSine); // 余弦y轴坐标
+#if 0
+		float sineValue = sinf(gameState->tSine); // 余弦y轴坐标
     int sampleValue = sineValue * soundOutputBuffer.toneVolume;
+#endif
+
+    int sampleValue = 0;
     // 写入左右双声道
     *sampleOut++ = sampleValue;
     *sampleOut++ = sampleValue;
-    // 适应频率改变
+
+#if 0
+		// 适应频率改变
     gameState->tSine += (PI * 2.0f) / wavePeroid;
     // 防止精度丢失
     if (gameState->tSine > PI * 2.0f) gameState->tSine -= PI * 2.0f;
+#endif
   }
 }
 
-static void renderPlayer(game_offscreen_buffer buffer, int playX, int playY) {
-  uint8 *endOfBuffer = (uint8 *)buffer.memory + buffer.height * buffer.pitch;
-
-  uint32 color = 0xffffffff;
-  int size = 10;
-
-  for (int x = playX; x < playX + size; ++x) {
-    uint8 *pixel = (uint8 *)buffer.memory + playY * buffer.pitch + x * buffer.bytesPerPixel;
-    for (int y = playY; y < playY + size; ++y) {
-      if (pixel >= buffer.memory && (pixel + 4) <= endOfBuffer) {
-        *(uint32 *)pixel = color;
-      }
-      pixel += buffer.pitch;
-    }
-  }
-};
-
+#if 0
 static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, int greenOffset) {
   uint8 *row = (uint8 *)offscreenBuffer.memory;
   int pitch = offscreenBuffer.width * offscreenBuffer.bytesPerPixel;
@@ -52,6 +46,37 @@ static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOf
     row += pitch;
   }
 }
+#endif
+
+static int32 roundFloatToInt32(float f32) {
+  int32 result = (int32)(f32 + .5f);
+  return result;
+};
+
+static void drawRectangle(game_offscreen_buffer *buffer,
+                          float rectMinX, float rectMaxX,
+                          float rectMinY, float rectMaxY,
+                          uint32 color) {
+
+  int32 MinX = roundFloatToInt32(rectMinX);
+  int32 MinY = roundFloatToInt32(rectMinY);
+  int32 MaxX = roundFloatToInt32(rectMaxX);
+  int32 MaxY = roundFloatToInt32(rectMaxY);
+
+  if (MinX < 0) MinX = 0;
+  if (MinY < 0) MinY = 0;
+  if (MaxX > buffer->width) MaxX = buffer->width;
+  if (MinY > buffer->height) MaxY = buffer->height;
+
+  uint8 *row = (uint8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
+  for (int y = MinY; y < MaxY; ++y) {
+    uint32 *pixel = (uint32 *)row;
+    for (int x = MinX; x < MaxX; ++x) {
+      *pixel++ = color;
+    }
+    row += buffer->pitch;
+  }
+}
 
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   static bool isWrite;
@@ -62,62 +87,19 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   game_state *gameState = (game_state *)memory->permanentStorage;
 
   if (!memory->isInitialized) {
-#if HANDMADE_INTERNAL
-    if (!isWrite) {
-      const char *filename = __FILE__;
-      auto result = memory->debugPlatformReadEntireFile(thread, filename);
-      if (result.contents) {
-        memory->debugPlatformWriteEntireFile(thread, "test.out", result.fileSize, result.contents);
-        memory->debugPlatformFreeFileMemory(thread, result.contents);
-      }
-      isWrite = true;
-    }
-#endif
-
-    gameState->toneHz = 256;
-    gameState->tSine = .0f;
-
-    gameState->playerX = 100;
-    gameState->playerY = 100;
-
     memory->isInitialized = true;
   }
 
-  for (auto &input : gameInput->controller) {
-    if (input.isAnalog) {
-      gameState->blueOffset += (int)(4.f * input.stickAverageX);
-      gameState->toneHz = 256 + (int)(128.f * input.stickAverageY);
+  for (auto &controller : gameInput->controller) {
+    if (controller.isAnalog) {
+      // NOTE Use analog movement tuning
     } else {
-      if (input.moveLeft.endDown) {
-        gameState->blueOffset += -1;
-      } else if (input.moveRight.endDown) {
-        gameState->blueOffset += 1;
-      }
+      // NOTE Use digital movement tuning
     }
-
-    if (input.actionDown.endDown) {
-      gameState->greenOffset += 1;
-    }
-
-    gameState->playerX += (int)(4.0f * input.stickAverageX);
-    gameState->playerY -= (int)(4.0f * input.stickAverageY);
-    if (gameState->tJump > 0) {
-      gameState->playerY += int(1.5f * sinf(0.5f * PI * gameState->tJump));
-    }
-    if (input.actionLeft.endDown) {
-      gameState->tJump = 4.0f;
-    }
-    gameState->tJump -= 4.0 / (float)(60 * 2 * arr_length(gameInput->controller));
   }
 
-  renderWeirGradient(offscreenBuffer, gameState->blueOffset, gameState->greenOffset);
-  renderPlayer(offscreenBuffer, gameState->playerX, gameState->playerY);
-
-  renderPlayer(offscreenBuffer, gameInput->mouseX, gameInput->mouseY);
-  for (int mouseInputIndex = 0; mouseInputIndex < arr_length(gameInput->mouseButtons); ++mouseInputIndex) {
-    if (gameInput->mouseButtons[mouseInputIndex].endDown)
-      renderPlayer(offscreenBuffer, 10 + 20 * mouseInputIndex, 10);
-  }
+  drawRectangle(buffer, 0.0f, buffer->width, 0.0f, buffer->height, 0x00FF00FF);
+  drawRectangle(buffer, 10.0f, 40.0f, 10.0f, 40.0f, 0x0000FFFF);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {

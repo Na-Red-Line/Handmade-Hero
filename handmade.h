@@ -114,21 +114,13 @@ struct game_input {
   int mouseY;
   int mouseZ;
 
+  int secondsToAdvanceOverUpdate;
+
   // 五个控制器，第一个是键盘
   game_controller_input controller[5];
 };
 
 struct game_state {
-  int blueOffset;
-  int greenOffset;
-  int toneHz;
-  // 余弦x轴坐标
-  float tSine;
-
-  int playerX;
-  int playerY;
-
-  float tJump;
 };
 
 struct game_memory {
@@ -150,7 +142,7 @@ struct game_memory {
 };
 
 // 动态链接加载方法
-#define GAME_UPDATE_AND_RENDER(name) void name(thread_context *thread, game_memory *memory, game_input *gameInput, game_offscreen_buffer offscreenBuffer)
+#define GAME_UPDATE_AND_RENDER(name) void name(thread_context *thread, game_memory *memory, game_input *gameInput, game_offscreen_buffer *buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 
 #define GAME_GET_SOUND_SAMPLES(name) void name(thread_context *thread, game_memory *memory, game_sound_output_buffer soundOutputBuffer)
