@@ -48,25 +48,30 @@ static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOf
 }
 #endif
 
-static int32 roundFloatToInt32(float f32) {
-  int32 result = (int32)(f32 + .5f);
+template <typename T>
+static T roundFloatToInt(float f32) {
+  T result = T(f32 + .5f);
   return result;
 };
 
 static void drawRectangle(game_offscreen_buffer *buffer,
                           float rectMinX, float rectMaxX,
                           float rectMinY, float rectMaxY,
-                          uint32 color) {
+                          float R, float G, float B) {
 
-  int32 MinX = roundFloatToInt32(rectMinX);
-  int32 MinY = roundFloatToInt32(rectMinY);
-  int32 MaxX = roundFloatToInt32(rectMaxX);
-  int32 MaxY = roundFloatToInt32(rectMaxY);
+  int32 MinX = roundFloatToInt<int32>(rectMinX);
+  int32 MaxX = roundFloatToInt<int32>(rectMaxX);
+  int32 MinY = roundFloatToInt<int32>(rectMinY);
+  int32 MaxY = roundFloatToInt<int32>(rectMaxY);
 
   if (MinX < 0) MinX = 0;
   if (MinY < 0) MinY = 0;
   if (MaxX > buffer->width) MaxX = buffer->width;
   if (MinY > buffer->height) MaxY = buffer->height;
+
+  uint32 color = (roundFloatToInt<uint32>(R * 255.0f) << 16) |
+                 (roundFloatToInt<uint32>(G * 255.0f) << 8) |
+                 (roundFloatToInt<uint32>(B * 255.0f) << 0);
 
   uint8 *row = (uint8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
   for (int y = MinY; y < MaxY; ++y) {
@@ -95,11 +100,76 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       // NOTE Use analog movement tuning
     } else {
       // NOTE Use digital movement tuning
+      float dPlayerX = 0.0f;
+      float dPlayerY = 0.0f;
+
+      if (controller.moveUp.endDown) {
+        dPlayerY = -1.0f;
+      }
+      if (controller.moveDown.endDown) {
+        dPlayerY = 1.0f;
+      }
+      if (controller.moveLeft.endDown) {
+        dPlayerX = -1.0f;
+      }
+      if (controller.moveRight.endDown) {
+        dPlayerX = 1.0f;
+      }
+      dPlayerX *= 200.0f;
+      dPlayerY *= 200.0f;
+
+      gameState->playerX += gameInput->dtForFrame * dPlayerX;
+      gameState->playerY += gameInput->dtForFrame * dPlayerY;
     }
   }
 
-  drawRectangle(buffer, 0.0f, buffer->width, 0.0f, buffer->height, 0x00FF00FF);
-  drawRectangle(buffer, 10.0f, 40.0f, 10.0f, 40.0f, 0x0000FFFF);
+  drawRectangle(buffer, 0.0f, (float)buffer->width, 0.0f, (float)buffer->height, 1.0f, 0.0f, 1.0f);
+
+  uint32 tileMap[9][17] = {
+      {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1},
+      {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
+  };
+
+  float upperLeftX = 100;
+  float upperLeftY = 100;
+  float tileWidth = 100;
+  float tileHeight = 100;
+
+  for (int row = 0; row < arr_length(tileMap); ++row) {
+    for (int column = 0; column < arr_length(*tileMap); ++column) {
+      uint32 tileID = tileMap[row][column];
+      float gray = 0.5f;
+      if (tileID == 1) {
+        gray = 1.0f;
+      }
+
+      float MinX = upperLeftX + ((float)column) * tileWidth;
+      float MaxX = MinX + tileWidth;
+      float MinY = upperLeftY + ((float)row) * tileHeight;
+      float MaxY = MinY + tileHeight;
+
+      drawRectangle(buffer, MinX, MaxX, MinY, MaxY, gray, gray, gray);
+    }
+  }
+
+  float playerR = 1.0f;
+  float playerG = 1.0f;
+  float playerB = 0.0f;
+  float playerWidth = 0.75 * tileWidth;
+  float playerHeight = tileHeight;
+  float playerLeft = gameState->playerX - 0.5 * playerWidth;
+  float playerTop = gameState->playerY - playerHeight;
+  drawRectangle(buffer,
+                playerLeft, playerLeft + playerWidth,
+                playerTop, playerTop + playerHeight,
+                playerR, playerG, playerB);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {

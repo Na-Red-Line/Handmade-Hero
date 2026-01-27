@@ -327,9 +327,8 @@ static LARGE_INTEGER winGetWallClock() {
   return result;
 }
 
-static uint64 winGetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
-  uint64 counterElapsed = end.QuadPart - start.QuadPart;
-  uint64 secondsElapsedForWork = (counterElapsed * 1000) / globalPerfCountFrequency;
+static float winGetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+  float secondsElapsedForWork = (float)(end.QuadPart - start.QuadPart) / (float)globalPerfCountFrequency;
   return secondsElapsedForWork;
 }
 
@@ -548,8 +547,7 @@ void winDebugSyncDisplay(win_offscreen_buffer *backbuffer,
                          int markerCount,
                          win_debug_time_marker *markers,
                          int currentMarkerIndex,
-                         win_sound_output *soundOutput,
-                         float targetSecondsPerFrame) {
+                         win_sound_output *soundOutput) {
   int PadX = 16;
   int PadY = 16;
 
@@ -690,7 +688,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // 游戏物理逻辑帧
   int gameUpdateHz = monitorRefresHz / 2;
   // 每帧的时间
-  int targetElapsedPerFrame = 1000 / gameUpdateHz;
+  float targetSecondsPerFrame = 1.0f / gameUpdateHz;
 
   win_sound_output soundOutput = {};
   soundOutput.runingSampleIndex = 0;
@@ -732,6 +730,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                           PAGE_READWRITE);
   gameMemory.permanentStorage = winState.gameMemoryBlock;
 
+#if 0
   for (int replayIndex = 0; replayIndex < arr_length(winState.replayBuffers); ++replayIndex) {
     win_replay_buffer *replayBuffer = &winState.replayBuffers[replayIndex];
 
@@ -747,6 +746,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       // TODO(casey): Diagnostic
     }
   }
+#endif
 
   if (!samples || !gameMemory.permanentStorage) {
     // TODO 分配失败
@@ -755,7 +755,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   game_input input[2] = {};
   game_input *newInput = &input[0];
   game_input *oldInput = &input[1];
-  newInput->secondsToAdvanceOverUpdate = targetElapsedPerFrame;
 
   DWORD lastPlayCursor = 0;
   bool soundIsValid = false;
@@ -786,6 +785,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       winUnloadGameCode(&gameCode);
       gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
     }
+
+    newInput->dtForFrame = targetSecondsPerFrame;
 
     // 清空键盘控制器状态
     game_controller_input *oldController = &oldInput->controller[0];
@@ -911,7 +912,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     }
 
     LARGE_INTEGER audioWallClock = winGetWallClock();
-    DWORD fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
+    float fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
 
     // 控制音频延迟
     DWORD playCursor;  // 当前播放光标
@@ -928,9 +929,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       // 预期写入字节
       DWORD expectedSoundBytesPerFrame = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample) / gameUpdateHz;
       // 每帧剩余时间
-      DWORD secondsLeftUntilFlip = targetElapsedPerFrame - fromBeginToAudioSeconds;
+      float secondsLeftUntilFlip = targetSecondsPerFrame - fromBeginToAudioSeconds;
       // 预期剩余时间可以写入的字节
-      DWORD expectedBytesUntilFlip = (DWORD)(((float)secondsLeftUntilFlip / (float)targetElapsedPerFrame) * (float)expectedSoundBytesPerFrame);
+      DWORD expectedBytesUntilFlip = (DWORD)((secondsLeftUntilFlip / targetSecondsPerFrame) * (float)expectedSoundBytesPerFrame);
       // 预期写入的边界
       DWORD expectedFrameBoundaryByte = playCursor + expectedBytesUntilFlip;
 
@@ -994,19 +995,19 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     LARGE_INTEGER endCounter = winGetWallClock();
     // 控制物理逻辑帧
-    uint64 secondsElapsedForWork = winGetSecondsElapsed(lastCounter, endCounter);
-    if (secondsElapsedForWork < targetElapsedPerFrame) {
+    float secondsElapsedForWork = winGetSecondsElapsed(lastCounter, endCounter);
+    if (secondsElapsedForWork < targetSecondsPerFrame) {
       if (sleepIsGranular) {
-        DWORD sleepMS = targetElapsedPerFrame - secondsElapsedForWork;
+        DWORD sleepMS = (DWORD)(1000.0f * (targetSecondsPerFrame - secondsElapsedForWork));
         if (sleepMS > 0) Sleep(sleepMS);
       }
 
-      uint64 testSecondsElapsedForFrame = winGetSecondsElapsed(lastCounter, winGetWallClock());
-      if (testSecondsElapsedForFrame < targetElapsedPerFrame) {
+      float testSecondsElapsedForFrame = winGetSecondsElapsed(lastCounter, winGetWallClock());
+      if (testSecondsElapsedForFrame < targetSecondsPerFrame) {
         // TODO LOG MISSED SLEEP HERE
       }
 
-      while (secondsElapsedForWork < targetElapsedPerFrame) {
+      while (secondsElapsedForWork < targetSecondsPerFrame) {
         secondsElapsedForWork = winGetSecondsElapsed(lastCounter, winGetWallClock());
       }
     } else {
@@ -1029,7 +1030,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 #endif
 
 #if HANDMADE_INTERNAL
-    winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput, targetElapsedPerFrame);
+    winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput);
 #endif
 
     auto dimension = getWindowDimension(window);

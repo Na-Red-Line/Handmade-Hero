@@ -114,13 +114,15 @@ struct game_input {
   int mouseY;
   int mouseZ;
 
-  int secondsToAdvanceOverUpdate;
+  float dtForFrame;
 
   // 五个控制器，第一个是键盘
   game_controller_input controller[5];
 };
 
 struct game_state {
+  float playerX;
+  float playerY;
 };
 
 struct game_memory {
