@@ -260,9 +260,17 @@ static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int hei
 }
 
 static void winDisplayBufferInWindow(win_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight) {
+  constexpr int offsetX = 10;
+  constexpr int offsetY = 10;
+
+  PatBlt(deviceContext, 0, 0, windowWidth, offsetY, BLACKNESS);
+  PatBlt(deviceContext, 0, offsetY + buffer->height, windowWidth, windowHeight, BLACKNESS);
+  PatBlt(deviceContext, 0, 0, offsetX, windowHeight, BLACKNESS);
+  PatBlt(deviceContext, offsetX + buffer->width, 0, windowWidth, windowHeight, BLACKNESS);
+
   // 原型开发不进行拉伸，保持像素 1:1
   StretchDIBits(deviceContext,
-                0, 0, buffer->width, buffer->height,
+                offsetX, offsetY, buffer->width, buffer->height,
                 0, 0, buffer->width, buffer->height,
                 buffer->memory,
                 &buffer->info,
@@ -677,7 +685,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   winLoadXInput();
 
   HDC deviceContext = GetDC(window);
-  winResizeDIBSection(&globalBackBuffer, 1920, 1080);
+  winResizeDIBSection(&globalBackBuffer, 1920 * 3 / 4, 1080 * 3 / 4);
 
   // 获取当前设备屏幕刷新率
   int monitorRefresHz = 144;

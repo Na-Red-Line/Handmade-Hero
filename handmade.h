@@ -120,6 +120,25 @@ struct game_input {
   game_controller_input controller[5];
 };
 
+struct tile_map {
+  int32 countX;
+  int32 countY;
+
+  float upperLeftX;
+  float upperLeftY;
+  float tileWidth;
+  float tileHeight;
+
+  uint32 *tiles;
+};
+
+struct world {
+  int32 tileMapCountX;
+  int32 tileMapCountY;
+
+  tile_map *tileMaps;
+};
+
 struct game_state {
   float playerX;
   float playerY;
