@@ -120,7 +120,30 @@ struct game_input {
   game_controller_input controller[5];
 };
 
+struct canonical_position {
+  int32 tileMapX;
+  int32 tileMapY;
+
+  int32 tileX;
+  int32 tileY;
+
+  float tileRelX;
+  float tileRelY;
+};
+
+struct raw_position {
+  int32 tileMapX;
+  int32 tileMapY;
+
+  float X;
+  float Y;
+};
+
 struct tile_map {
+  uint32 *tiles;
+};
+
+struct world {
   int32 countX;
   int32 countY;
 
@@ -129,10 +152,6 @@ struct tile_map {
   float tileWidth;
   float tileHeight;
 
-  uint32 *tiles;
-};
-
-struct world {
   int32 tileMapCountX;
   int32 tileMapCountY;
 
@@ -140,6 +159,9 @@ struct world {
 };
 
 struct game_state {
+  int32 playerTileMapX;
+  int32 playerTileMapY;
+
   float playerX;
   float playerY;
 };
