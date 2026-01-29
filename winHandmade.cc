@@ -738,7 +738,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
                                           PAGE_READWRITE);
   gameMemory.permanentStorage = winState.gameMemoryBlock;
 
-#if 0
+#if RECORD
   for (int replayIndex = 0; replayIndex < arr_length(winState.replayBuffers); ++replayIndex) {
     win_replay_buffer *replayBuffer = &winState.replayBuffers[replayIndex];
 

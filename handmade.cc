@@ -152,7 +152,7 @@ static canonical_position getCanonicalPosition(world *world, raw_position pos) {
 
   if (result.tileY < 0) {
     result.tileMapY--;
-    result.tileY = world->countY + result.tileX;
+    result.tileY = world->countY + result.tileY;
   }
 
   if (result.tileY >= world->countY) {
@@ -285,8 +285,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       if (controller.moveRight.endDown) {
         dPlayerX = 1.0f;
       }
-      dPlayerX *= 100.0f;
-      dPlayerY *= 100.0f;
+      dPlayerX *= 120.0f;
+      dPlayerY *= 120.0f;
 
       float newPlayX = gameState->playerX + gameInput->dtForFrame * dPlayerX;
       float newPlayY = gameState->playerY + gameInput->dtForFrame * dPlayerY;
@@ -310,7 +310,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         canonical_position canPos = getCanonicalPosition(&world, playerPos);
 
         gameState->playerTileMapX = canPos.tileMapX;
-        gameState->playerTileMapX = canPos.tileMapY;
+        gameState->playerTileMapY = canPos.tileMapY;
         gameState->playerX = world.upperLeftX + canPos.tileX * world.tileWidth + canPos.tileRelX;
         gameState->playerY = world.upperLeftY + canPos.tileY * world.tileHeight + canPos.tileRelY;
       }
