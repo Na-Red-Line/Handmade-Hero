@@ -129,16 +129,16 @@ static canonical_position getCanonicalPosition(world *world, raw_position pos) {
 
   float X = pos.X - world->upperLeftX;
   float Y = pos.Y - world->upperLeftY;
-  result.tileX = floorfToInt32(X / world->tileWidth);
-  result.tileY = floorfToInt32(Y / world->tileHeight);
+  result.tileX = floorfToInt32(X / (float)world->tileSideInPixels);
+  result.tileY = floorfToInt32(Y / (float)world->tileSideInPixels);
 
-  result.tileRelX = X - result.tileX * world->tileWidth;
-  result.tileRelY = Y - result.tileY * world->tileHeight;
+  result.tileRelX = X - (float)result.tileX * (float)world->tileSideInPixels;
+  result.tileRelY = Y - (float)result.tileY * (float)world->tileSideInPixels;
 
   assert(result.tileRelX >= 0);
   assert(result.tileRelY >= 0);
-  assert(result.tileRelX < world->tileWidth);
-  assert(result.tileRelX < world->tileHeight);
+  assert(result.tileRelX < world->tileSideInPixels);
+  assert(result.tileRelX < world->tileSideInPixels);
 
   if (result.tileX < 0) {
     result.tileMapX--;
@@ -240,17 +240,19 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   world.countX = TILE_MAP_COUNT_X;
   world.countY = TILE_MAP_COUNT_Y;
-  world.upperLeftX = -10;
+
+  world.tileSideInMeters = 1.4f;
+  world.tileSideInPixels = 60;
+
+  world.upperLeftX = -(float)world.tileSideInPixels / 2;
   world.upperLeftY = 0;
-  world.tileWidth = 80;
-  world.tileHeight = 80;
 
   world.tileMapCountX = 2;
   world.tileMapCountY = 2;
   world.tileMaps = (tile_map *)tileMaps;
 
-  float playerWidth = 0.75 * world.tileWidth;
-  float playerHeight = world.tileHeight;
+  float playerWidth = 0.75 * world.tileSideInPixels;
+  float playerHeight = world.tileSideInPixels;
 
   game_state *gameState = (game_state *)memory->permanentStorage;
 
@@ -311,8 +313,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
         gameState->playerTileMapX = canPos.tileMapX;
         gameState->playerTileMapY = canPos.tileMapY;
-        gameState->playerX = world.upperLeftX + canPos.tileX * world.tileWidth + canPos.tileRelX;
-        gameState->playerY = world.upperLeftY + canPos.tileY * world.tileHeight + canPos.tileRelY;
+        gameState->playerX = world.upperLeftX + canPos.tileX * world.tileSideInPixels + canPos.tileRelX;
+        gameState->playerY = world.upperLeftY + canPos.tileY * world.tileSideInPixels + canPos.tileRelY;
       }
     }
   }
@@ -327,10 +329,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gray = 1.0f;
       }
 
-      float MinX = world.upperLeftX + ((float)column) * world.tileWidth;
-      float MaxX = MinX + world.tileWidth;
-      float MinY = world.upperLeftY + ((float)row) * world.tileHeight;
-      float MaxY = MinY + world.tileHeight;
+      float MinX = world.upperLeftX + ((float)column) * world.tileSideInPixels;
+      float MaxX = MinX + world.tileSideInPixels;
+      float MinY = world.upperLeftY + ((float)row) * world.tileSideInPixels;
+      float MaxY = MinY + world.tileSideInPixels;
 
       drawRectangle(buffer, MinX, MaxX, MinY, MaxY, gray, gray, gray);
     }
