@@ -305,7 +305,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       float MinY = centerY - ((float)relRow) * world.tileSideInPixels;
       float MaxY = MinY - world.tileSideInPixels;
 
-      drawRectangle(buffer, MinX, MaxX, MaxY, MaxY, gray, gray, gray);
+      drawRectangle(buffer, MinX, MaxX, MaxY, MinY, gray, gray, gray);
     }
   }
 
@@ -313,7 +313,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   float playerG = 1.0f;
   float playerB = 0.0f;
   float playerLeft = centerX + (gameState->playerP.tileRelX - 0.5 * playerWidth) * world.metersToPixels;
-  float playerTop = centerY - (gameState->playerP.tileRelY - playerHeight) * world.metersToPixels;
+  float playerTop = centerY - (gameState->playerP.tileRelY + playerHeight) * world.metersToPixels;
   drawRectangle(buffer,
                 playerLeft, playerLeft + playerWidth * world.metersToPixels,
                 playerTop, playerTop + playerHeight * world.metersToPixels,
