@@ -299,10 +299,12 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gray = 0.0f;
       }
 
-      float MinX = centerX + ((float)relColumn) * world.tileSideInPixels;
+      float MinX = centerX + ((float)relColumn) * world.tileSideInPixels -
+                   (gameState->playerP.tileRelX - 0.5 * playerWidth) * world.metersToPixels;
       float MaxX = MinX + world.tileSideInPixels;
       // MinY实际比MaxY大，是为了图形为Y轴升高
-      float MinY = centerY - ((float)relRow) * world.tileSideInPixels;
+      float MinY = centerY - ((float)relRow) * world.tileSideInPixels +
+                   (gameState->playerP.tileRelY + playerHeight) * world.metersToPixels;
       float MaxY = MinY - world.tileSideInPixels;
 
       drawRectangle(buffer, MinX, MaxX, MaxY, MinY, gray, gray, gray);
@@ -312,8 +314,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   float playerR = 1.0f;
   float playerG = 1.0f;
   float playerB = 0.0f;
-  float playerLeft = centerX + (gameState->playerP.tileRelX - 0.5 * playerWidth) * world.metersToPixels;
-  float playerTop = centerY - (gameState->playerP.tileRelY + playerHeight) * world.metersToPixels;
+  float playerLeft = centerX;
+  float playerTop = centerY;
   drawRectangle(buffer,
                 playerLeft, playerLeft + playerWidth * world.metersToPixels,
                 playerTop, playerTop + playerHeight * world.metersToPixels,
