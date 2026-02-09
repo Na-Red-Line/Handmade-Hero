@@ -1,20 +1,11 @@
 #pragma once
 
+#include "handmade_platform.h"
+
 #include <assert.h>
 #include <math.h>
-#include <stdint.h>
 
 constexpr float PI = 3.14159265359f;
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
 
 template <typename T, int N>
 constexpr int arr_length(T (&)[N]) { return N; }
@@ -29,164 +20,26 @@ constexpr uint32 saveCastUint64(uint64 value) {
   return (uint32)(value);
 }
 
-struct thread_context {
-  int placeholder;
-};
-
-#if HANDMADE_INTERNAL
-// IMPORT 测试使用 平台无关文件IO
-
-struct debug_read_file_result {
-  uint32 fileSize;
-  void *contents;
-};
-
-#define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(thread_context *thread, void *memory)
-typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
-
-#define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(thread_context *thread, const char *filename)
-typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
-
-#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(thread_context *thread, const char *filename, uint32 memorySize, void *memory)
-typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
-
-#endif
-
-// 更新屏幕渲染
-struct game_offscreen_buffer {
-  void *memory;
-  int width;
-  int height;
-  int pitch;
-  int bytesPerPixel;
-};
-
-struct game_sound_output_buffer {
-  void *buffer;         // 缓冲区
-  int bufferSize;       // 缓冲区大小
-  int samplesPerSecond; // 赫兹
-  int toneVolume;       // 音高
-};
-
-struct game_button_state {
-  int halfTransitionCount;
-  int32 endDown;
-};
-
-struct game_controller_input {
-  float stickAverageX;
-  float stickAverageY;
-
-  union {
-    game_button_state Button[12];
-    struct {
-      // 移动
-      game_button_state moveUp;
-      game_button_state moveDown;
-      game_button_state moveLeft;
-      game_button_state moveRight;
-
-      // action
-      game_button_state actionUp;
-      game_button_state actionDown;
-      game_button_state actionLeft;
-      game_button_state actionRight;
-
-      game_button_state leftShoulder;
-      game_button_state rightShoulder;
-
-      game_button_state start;
-      game_button_state back;
-
-      // 分界线，用于边界断言
-      game_button_state terminator;
-    };
-  };
-
-  bool isAnalog; // 是否是摇杆
-  bool isConnected;
-};
-
-struct game_input {
-  // 鼠标控制器
-  game_button_state mouseButtons[5];
-  int mouseX;
-  int mouseY;
-  int mouseZ;
-
-  float dtForFrame;
-
-  // 五个控制器，第一个是键盘
-  game_controller_input controller[5];
-};
-
 //
 //
 //
 
-struct tile_chunk_position {
-  uint32 tileChunkX;
-  uint32 tileChunkY;
+#include "handmade_tile.h"
+#include "handmade_intrinsics.h"
 
-  uint32 tileX;
-  uint32 tileY;
-};
-
-struct world_position {
-  // 取瓦片地图的 x 和 y 坐标，以及瓦片本身的 x 和 y 坐标
-  // 将它们打包成单个32位值，用于 x 和 y，其中低位用于图块索引，高位则是图块的页码
-
-  uint32 absTileX;
-  uint32 absTileY;
-
-  float tileRelX;
-  float tileRelY;
-};
-
-struct tile_chunk {
-  uint32 *tiles;
+struct memory_arena {
+  size_t size;
+  uint8 *base;
+  size_t used;
 };
 
 struct world {
-  uint32 chunkShift;
-  uint32 chunkMask;
-  uint32 chunkDim;
-
-  float tileSideInMeters;
-  uint32 tileSideInPixels;
-  float metersToPixels;
-
-  int32 tileChunkCountX;
-  int32 tileChunkCountY;
-
-  tile_chunk *tileChunks;
+  tile_map *tileMap;
 };
 
 struct game_state {
-  world_position playerP;
+  memory_arena worldArena;
+  world *world;
+
+  tile_map_position playerP;
 };
-
-struct game_memory {
-  bool isInitialized;
-
-  // NOTE 永久游戏内存，暂为 game_state
-  uint64 permanentStorageSize;
-  void *permanentStorage;
-
-  // NOTE 动态游戏内存，暂为 game_state
-  uint64 transientStorageSize;
-  void *transientStorage;
-
-#if HANDMADE_INTERNAL
-  debug_platform_free_file_memory *debugPlatformFreeFileMemory;
-  debug_platform_read_entire_file *debugPlatformReadEntireFile;
-  debug_platform_write_entire_file *debugPlatformWriteEntireFile;
-#endif
-};
-
-// 动态链接加载方法
-#define GAME_UPDATE_AND_RENDER(name) void name(thread_context *thread, game_memory *memory, game_input *gameInput, game_offscreen_buffer *buffer)
-typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-
-#define GAME_GET_SOUND_SAMPLES(name) void name(thread_context *thread, game_memory *memory, game_sound_output_buffer soundOutputBuffer)
-typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
