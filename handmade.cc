@@ -106,8 +106,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
 
-    gameState->playerP.absTileX = 3;
-    gameState->playerP.absTileY = 3;
+    gameState->playerP.absTileX = 0;
+    gameState->playerP.absTileY = 0;
     gameState->playerP.tileRelX = 5.0f;
     gameState->playerP.tileRelY = 5.0f;
 
@@ -125,8 +125,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     tileMap->chunkMask = (1 << tileMap->chunkShift) - 1;
     tileMap->chunkDim = (1 << tileMap->chunkShift);
 
-    tileMap->tileChunkCountX = 128;
-    tileMap->tileChunkCountY = 128;
+    tileMap->tileChunkCountX = 32;
+    tileMap->tileChunkCountY = 32;
     tileMap->tileChunks = pushArray(&gameState->worldArena,
                                     tileMap->tileChunkCountX * tileMap->tileChunkCountY,
                                     tile_chunk);
@@ -142,18 +142,15 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     tileMap->tileSideInPixels = 60;
     tileMap->metersToPixels = (float)tileMap->tileSideInPixels / (float)tileMap->tileSideInMeters;
 
-    float LowerLeftX = -(float)tileMap->tileSideInPixels / 2;
-    float LowerLeftY = (float)buffer->height;
-
     uint32 tilesPerWidth = 17;
     uint32 tilesPerHeight = 9;
 
-    for (uint32 screenX = 0; screenX < 32; ++screenX) {
-      for (uint32 screenY = 0; screenY < 32; ++screenY) {
-        for (uint32 tileX = 0; tileX < tilesPerWidth; ++tileX) {
-          for (uint32 tileY = 0; tileY < tilesPerHeight; ++tileY) {
-            uint32 absTileX = screenX * tilesPerWidth + tileX;
-            uint32 absTileY = screenY * tilesPerHeight + tileY;
+    for (uint32 screenX = 0; screenX < tileMap->tileChunkCountX; ++screenX) {
+      for (uint32 screenY = 0; screenY < tileMap->tileChunkCountY; ++screenY) {
+        for (uint32 tileY = 0; tileY < tileMap->chunkDim; ++tileY) {
+          for (uint32 tileX = 0; tileX < tileMap->chunkDim; ++tileX) {
+            uint32 absTileX = (screenX << tileMap->chunkShift) + tileX;
+            uint32 absTileY = (screenY << tileMap->chunkShift) + tileY;
 
             setTileValue(world->tileMap,
                          absTileX,
@@ -246,10 +243,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
                    ((float)relRow) * tileMap->tileSideInPixels;
       float MinX = cenX - 0.5f * tileMap->tileSideInPixels;
       float MaxX = cenX + 0.5f * tileMap->tileSideInPixels;
-      float MinY = cenY - 0.5f * tileMap->metersToPixels;
-      float MaxY = cenY + 0.5f * tileMap->metersToPixels;
+      float MinY = cenY - 0.5f * tileMap->tileSideInPixels;
+      float MaxY = cenY + 0.5f * tileMap->tileSideInPixels;
 
-      drawRectangle(buffer, MinX, MaxX, MinX, MaxY, gray, gray, gray);
+      drawRectangle(buffer, MinX, MaxX, MinY, MaxY, gray, gray, gray);
     }
   }
 

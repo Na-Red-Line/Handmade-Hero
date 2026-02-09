@@ -55,7 +55,7 @@ inline void setTileValueUnchecked(tile_map *tileMap, tile_chunk *tileChunk, uint
 }
 
 inline uint32 getTileValue(tile_map *tileMap, tile_chunk *tileChunk, uint32 tileX, uint32 tileY) {
-  uint32 tileChunkValue = 0;
+  uint32 tileChunkValue = 1;
 
   if (tileChunk) {
     tileChunkValue = getTileValueUnchecked(tileMap, tileChunk, tileX, tileY);
