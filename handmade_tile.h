@@ -8,6 +8,7 @@ struct tile_map_position {
 
   uint32 absTileX;
   uint32 absTileY;
+  uint32 absTileZ;
 
   float tileRelX;
   float tileRelY;
@@ -16,6 +17,7 @@ struct tile_map_position {
 struct tile_chunk_position {
   uint32 tileChunkX;
   uint32 tileChunkY;
+  uint32 tileChunkZ;
 
   uint32 tileX;
   uint32 tileY;

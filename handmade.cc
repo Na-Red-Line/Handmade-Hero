@@ -1,5 +1,8 @@
 #include "handmade.h"
+#include "handmade_random.h"
 #include "handmade_tile.cc"
+
+#include <stdio.h>
 
 static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
   int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
@@ -78,22 +81,6 @@ static void drawRectangle(game_offscreen_buffer *buffer,
   }
 }
 
-static void initializerArena(memory_arena *arena, size_t size, uint8 *base) {
-  arena->size = size;
-  arena->base = base;
-  arena->used = 0;
-}
-
-#define pushStruct(arena, type) (type *)pushSize_(arena, sizeof(type));
-#define pushArray(arena, count, type) (type *)pushSize_(arena, (count) * sizeof(type));
-
-void *pushSize_(memory_arena *arena, size_t size) {
-  assert((arena->used + size) <= arena->size);
-  void *result = arena->base + arena->used;
-  arena->used += size;
-  return result;
-}
-
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   static bool isWrite;
 
@@ -106,8 +93,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
 
-    gameState->playerP.absTileX = 0;
-    gameState->playerP.absTileY = 0;
+    gameState->playerP.absTileX = 1;
+    gameState->playerP.absTileY = 3;
     gameState->playerP.tileRelX = 5.0f;
     gameState->playerP.tileRelY = 5.0f;
 
@@ -125,39 +112,116 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     tileMap->chunkMask = (1 << tileMap->chunkShift) - 1;
     tileMap->chunkDim = (1 << tileMap->chunkShift);
 
-    tileMap->tileChunkCountX = 32;
-    tileMap->tileChunkCountY = 32;
-    tileMap->tileChunks = pushArray(&gameState->worldArena,
-                                    tileMap->tileChunkCountX * tileMap->tileChunkCountY,
-                                    tile_chunk);
-
-    for (uint32 Y = 0; Y < tileMap->tileChunkCountY; ++Y) {
-      for (uint32 X = 0; X < tileMap->tileChunkCountX; ++X) {
-        tileMap->tileChunks[Y * tileMap->tileChunkCountX + X].tiles =
-            pushArray(&gameState->worldArena, tileMap->chunkDim * tileMap->chunkDim, uint32);
-      }
-    }
-
     tileMap->tileSideInMeters = 1.4f;
     tileMap->tileSideInPixels = 60;
     tileMap->metersToPixels = (float)tileMap->tileSideInPixels / (float)tileMap->tileSideInMeters;
 
+    tileMap->tileChunkCountX = 128;
+    tileMap->tileChunkCountY = 128;
+    tileMap->tileChunks = pushArray(&gameState->worldArena,
+                                    tileMap->tileChunkCountX * tileMap->tileChunkCountY,
+                                    tile_chunk);
+
     uint32 tilesPerWidth = 17;
     uint32 tilesPerHeight = 9;
+    uint32 screenX = 0;
+    uint32 screenY = 0;
+    uint32 absTileZ = 0;
 
-    for (uint32 screenX = 0; screenX < tileMap->tileChunkCountX; ++screenX) {
-      for (uint32 screenY = 0; screenY < tileMap->tileChunkCountY; ++screenY) {
-        for (uint32 tileY = 0; tileY < tileMap->chunkDim; ++tileY) {
-          for (uint32 tileX = 0; tileX < tileMap->chunkDim; ++tileX) {
-            uint32 absTileX = (screenX << tileMap->chunkShift) + tileX;
-            uint32 absTileY = (screenY << tileMap->chunkShift) + tileY;
+    bool doorLeft = false;
+    bool doorRight = false;
+    bool doorTop = false;
+    bool doorBottom = false;
+    bool doorUp = false;
+    bool doorDown = false;
 
-            setTileValue(world->tileMap,
-                         absTileX,
-                         absTileY,
-                         (tileX == tileY && tileY % 2) ? 1 : 0);
-          }
+    for (int screenIndex = 0; screenIndex < 50; ++screenIndex) {
+      int randomChoice = 0;
+      if (doorUp || doorDown) {
+        randomChoice = random() % 2;
+      } else {
+        randomChoice = random() % 3;
+      }
+
+      if (randomChoice == 2) {
+        if (absTileZ == 0) {
+          doorUp = true;
+        } else {
+          doorDown = true;
         }
+      } else if (randomChoice == 1) {
+        doorLeft = true;
+      } else {
+        doorTop = true;
+      }
+
+      for (uint32 tileY = 0; tileY < tilesPerHeight; ++tileY) {
+        for (uint32 tileX = 0; tileX < tilesPerWidth; ++tileX) {
+          uint32 absTileX = (screenX * tilesPerWidth) + tileX;
+          uint32 absTileY = (screenY * tilesPerHeight) + tileY;
+
+          int value = 1;
+
+          if (tileY == 0 && (!doorBottom || tileX != 8)) {
+            value = 2;
+          }
+
+          if (tileY == 8 && (!doorTop || tileX != 8)) {
+            value = 2;
+          }
+
+          if (tileX == 0 && (!doorRight || tileY != 4)) {
+            value = 2;
+          }
+
+          if (tileX == 16 && (!doorLeft || tileY != 4)) {
+            value = 2;
+          }
+
+          if (tileX == 8 && tileY == 4) {
+            if (doorUp) {
+              value = 3;
+            }
+
+            if (doorDown) {
+              value = 4;
+            }
+          }
+
+          setTileValue(
+              &gameState->worldArena, world->tileMap,
+              absTileX, absTileY, absTileZ,
+              value);
+        }
+      }
+
+      doorRight = doorLeft;
+      doorBottom = doorTop;
+
+      if (doorUp) {
+        doorDown = true;
+        doorUp = false;
+      } else if (doorDown) {
+        doorUp = true;
+        doorDown = false;
+      } else {
+        doorUp = false;
+        doorDown = false;
+      }
+
+      doorLeft = false;
+      doorTop = false;
+
+      if (randomChoice == 2) {
+        if (absTileZ == 0) {
+          absTileZ = 1;
+        } else {
+          absTileZ = 0;
+        }
+      } else if (randomChoice == 1) {
+        screenX += 1;
+      } else {
+        screenY += 1;
       }
     }
 
@@ -226,11 +290,20 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     for (int32 relColumn = -20; relColumn < 20; ++relColumn) {
       uint32 column = gameState->playerP.absTileX + relColumn;
       uint32 row = gameState->playerP.absTileY + relRow;
-      uint32 tileID = getTileValue(tileMap, column, row);
+      uint32 tileID = getTileValue(tileMap, column, row, gameState->playerP.absTileZ);
+
+      // 零表示空
+      if (tileID == 0) {
+        continue;
+      }
 
       float gray = 0.5f;
-      if (tileID == 1) {
+      if (tileID == 2) {
         gray = 1.0f;
+      }
+
+      if (tileID > 2) {
+        gray = 0.25f;
       }
 
       if (column == gameState->playerP.absTileX && row == gameState->playerP.absTileY) {

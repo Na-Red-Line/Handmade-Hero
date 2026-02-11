@@ -24,14 +24,30 @@ constexpr uint32 saveCastUint64(uint64 value) {
 //
 //
 
-#include "handmade_tile.h"
-#include "handmade_intrinsics.h"
-
 struct memory_arena {
   size_t size;
   uint8 *base;
   size_t used;
 };
+
+static void initializerArena(memory_arena *arena, size_t size, uint8 *base) {
+  arena->size = size;
+  arena->base = base;
+  arena->used = 0;
+}
+
+#define pushStruct(arena, type) (type *)pushSize_(arena, sizeof(type));
+#define pushArray(arena, count, type) (type *)pushSize_(arena, (count) * sizeof(type));
+
+void *pushSize_(memory_arena *arena, size_t size) {
+  assert((arena->used + size) <= arena->size);
+  void *result = arena->base + arena->used;
+  arena->used += size;
+  return result;
+}
+
+#include "handmade_tile.h"
+#include "handmade_intrinsics.h"
 
 struct world {
   tile_map *tileMap;
