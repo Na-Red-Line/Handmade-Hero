@@ -54,6 +54,8 @@ struct world {
 };
 
 struct game_state {
+  uint32 *pixelPointer;
+
   memory_arena worldArena;
   world *world;
 

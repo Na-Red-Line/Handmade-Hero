@@ -38,6 +38,7 @@ struct tile_map {
 
   int32 tileChunkCountX;
   int32 tileChunkCountY;
+  int32 tileChunkCountZ;
 
   tile_chunk *tileChunks;
 };

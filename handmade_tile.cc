@@ -31,8 +31,9 @@ inline tile_chunk *getTileChunk(tile_map *tileMap, int32 tileChunkX, int32 tileC
   tile_chunk *tileChunk = nullptr;
 
   if ((tileChunkX >= 0 && tileChunkX < tileMap->tileChunkCountX) &&
-      (tileChunkY >= 0 && tileChunkY < tileMap->tileChunkCountY)) {
-    tileChunk = &tileMap->tileChunks[tileChunkZ * tileChunkX * tileChunkZ +
+      (tileChunkY >= 0 && tileChunkY < tileMap->tileChunkCountY) &&
+      (tileChunkZ >= 0 && tileChunkZ < tileMap->tileChunkCountZ)) {
+    tileChunk = &tileMap->tileChunks[tileChunkZ * tileMap->tileChunkCountX * tileMap->tileChunkCountY +
                                      tileChunkY * tileMap->tileChunkCountX +
                                      tileChunkX];
   }
@@ -93,11 +94,16 @@ inline uint32 getTileValue(tile_map *tileMap, uint32 absTileX, uint32 absTileY, 
   return tileChunkValue;
 }
 
+inline uint32 getTileValue(tile_map *tileMap, tile_map_position pos) {
+  uint32 tileChunkValue = getTileValue(tileMap, pos.absTileX, pos.absTileY, pos.absTileZ);
+  return tileChunkValue;
+}
+
 inline bool isTileMapPointEmpty(tile_map *tileMap, tile_map_position pos) {
   bool empty = false;
 
   uint32 tileChunkValue = getTileValue(tileMap, pos.absTileX, pos.absTileY, pos.absTileZ);
-  empty = tileChunkValue == 1;
+  empty = (tileChunkValue == 1 || tileChunkValue == 3 || tileChunkValue == 4);
 
   return empty;
 }
@@ -113,9 +119,13 @@ inline void setTileValue(memory_arena *arena, tile_map *tileMap,
     uint32 tileCount = tileMap->chunkDim * tileMap->chunkDim;
     tileChunk->tiles = pushArray(arena, tileCount, uint32);
     for (int i = 0; i < tileCount; ++i) {
-      tileChunk->tiles[i] = 0;
+      tileChunk->tiles[i] = 1;
     }
   }
 
   setTileValue(tileMap, tileChunk, chunkPos.tileX, chunkPos.tileY, value);
+}
+
+inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
+  return a->absTileX == b->absTileX && a->absTileY == b->absTileY && a->absTileZ == b->absTileZ;
 }

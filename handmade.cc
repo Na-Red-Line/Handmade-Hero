@@ -81,6 +81,30 @@ static void drawRectangle(game_offscreen_buffer *buffer,
   }
 }
 
+// https://www.cnblogs.com/Matrix_Yao/archive/2009/12/02/1615295.html
+// bmp 文件格式
+#pragma pack(push, 1)
+struct bitmap_header {
+  uint16 bfType;
+  uint32 bfSize;
+  uint16 bfReserved1;
+  uint16 bfReserved2;
+  uint32 bfOffBits;
+};
+#pragma pack(pop)
+
+static uint32 *DEBUGLoadBMP(thread_context *thread, debug_platform_read_entire_file *readEntireFile, const char *fileName) {
+  uint32 *result = nullptr;
+
+  debug_read_file_result readFileResult = readEntireFile(thread, fileName);
+  if (readFileResult.fileSize != 0) {
+    bitmap_header *header = (bitmap_header *)readFileResult.contents;
+    result = (uint32 *)((uint8 *)header + header->bfOffBits);
+  }
+
+  return result;
+}
+
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   static bool isWrite;
 
@@ -92,9 +116,11 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
+    gameState->pixelPointer = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
 
     gameState->playerP.absTileX = 1;
     gameState->playerP.absTileY = 3;
+    gameState->playerP.absTileZ = 0;
     gameState->playerP.tileRelX = 5.0f;
     gameState->playerP.tileRelY = 5.0f;
 
@@ -113,13 +139,14 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     tileMap->chunkDim = (1 << tileMap->chunkShift);
 
     tileMap->tileSideInMeters = 1.4f;
-    tileMap->tileSideInPixels = 60;
+    tileMap->tileSideInPixels = 6;
     tileMap->metersToPixels = (float)tileMap->tileSideInPixels / (float)tileMap->tileSideInMeters;
 
     tileMap->tileChunkCountX = 128;
     tileMap->tileChunkCountY = 128;
+    tileMap->tileChunkCountZ = 2;
     tileMap->tileChunks = pushArray(&gameState->worldArena,
-                                    tileMap->tileChunkCountX * tileMap->tileChunkCountY,
+                                    tileMap->tileChunkCountX * tileMap->tileChunkCountY * tileMap->tileChunkCountZ,
                                     tile_chunk);
 
     uint32 tilesPerWidth = 17;
@@ -198,12 +225,14 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       doorRight = doorLeft;
       doorBottom = doorTop;
 
-      if (doorUp) {
-        doorDown = true;
-        doorUp = false;
-      } else if (doorDown) {
-        doorUp = true;
-        doorDown = false;
+      if (randomChoice == 2) {
+        if (doorUp) {
+          doorDown = true;
+          doorUp = false;
+        } else if (doorDown) {
+          doorUp = true;
+          doorDown = false;
+        }
       } else {
         doorUp = false;
         doorDown = false;
@@ -276,6 +305,17 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       if (isTileMapPointEmpty(tileMap, newPlayerP) &&
           isTileMapPointEmpty(tileMap, playerLeft) &&
           isTileMapPointEmpty(tileMap, playerRight)) {
+
+        if (!areOnSameTile(&gameState->playerP, &newPlayerP)) {
+          uint32 tileValue = getTileValue(world->tileMap, newPlayerP);
+          if (tileValue == 3) {
+            newPlayerP.absTileZ += 1;
+          }
+          if (tileValue == 4) {
+            newPlayerP.absTileZ -= 1;
+          }
+        }
+
         gameState->playerP = newPlayerP;
       }
     }
@@ -286,8 +326,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   float screenCenterX = 0.5f * (float)buffer->width;
   float screenCenterY = 0.5f * (float)buffer->height;
 
-  for (int32 relRow = -10; relRow < 10; ++relRow) {
-    for (int32 relColumn = -20; relColumn < 20; ++relColumn) {
+  for (int32 relRow = -100; relRow < 100; ++relRow) {
+    for (int32 relColumn = -200; relColumn < 200; ++relColumn) {
       uint32 column = gameState->playerP.absTileX + relColumn;
       uint32 row = gameState->playerP.absTileY + relRow;
       uint32 tileID = getTileValue(tileMap, column, row, gameState->playerP.absTileZ);

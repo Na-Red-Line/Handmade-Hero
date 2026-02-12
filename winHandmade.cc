@@ -527,7 +527,7 @@ static float winProcessXInputStickValue(float value, float thumbDeadZone) {
   }
 }
 
-#if HANDMADE_INTERNAL
+#if 0
 static void winDebugDrawVertical(win_offscreen_buffer *backbuffer, int xOffset, int top, int bottom, uint32 color) {
   if (top <= 0) top = 0;
 
@@ -769,7 +769,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   DWORD audioLatencyBytes = 0;
   float audioLatencySeconds = 0;
 
-#if HANDMADE_INTERNAL
+#if 0
   int debugTimeMarkerIndex = 0;
   win_debug_time_marker debugTimeMarkers[30] = {0};
 #endif
@@ -978,7 +978,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         gameCode.getSoundSamples(&thread, &gameMemory, soundBuffer);
       }
 
-#if HANDMADE_INTERNAL
+#if 0
       win_debug_time_marker *marker = &debugTimeMarkers[debugTimeMarkerIndex];
       marker->outputPlayCursor = playCursor;
       marker->outputWriteCursor = writeCursor;
@@ -1026,7 +1026,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
     endCounter = winGetWallClock();
 
-#if HANDMADE_INTERNAL
+#if 0
     uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
     float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
@@ -1037,7 +1037,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 #endif
 
-#if HANDMADE_INTERNAL
+#if 0
     winDebugSyncDisplay(&globalBackBuffer, arr_length(debugTimeMarkers), debugTimeMarkers, debugTimeMarkerIndex - 1, &soundOutput);
 #endif
 
@@ -1045,7 +1045,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     winDisplayBufferInWindow(&globalBackBuffer, deviceContext, dimension.width, dimension.height);
     flipWallClock = winGetWallClock();
 
-#if HANDMADE_INTERNAL
+#if 0
     // NOTE: This is debug code
     {
       DWORD playCursor;
@@ -1066,7 +1066,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     newInput = oldInput;
     oldInput = temp;
 
-#if HANDMADE_INTERNAL
+#if 0
     ++debugTimeMarkerIndex;
     if (debugTimeMarkerIndex == arr_length(debugTimeMarkers)) {
       debugTimeMarkerIndex = 0;
