@@ -81,25 +81,78 @@ static void drawRectangle(game_offscreen_buffer *buffer,
   }
 }
 
+static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap, float realX, float realY) {
+  int32 MinX = roundFloatToInt32(realX);
+  int32 MinY = roundFloatToInt32(realY);
+  int32 MaxX = roundFloatToInt32(realX + bitmap->width);
+  int32 MaxY = roundFloatToInt32(realY + bitmap->height);
+
+  if (MinX < 0) MinX = 0;
+  if (MinY < 0) MinY = 0;
+  if (MaxX > buffer->width) MaxX = buffer->width;
+  if (MaxY > buffer->height) MaxY = buffer->height;
+
+  uint32 *sourceRow = bitmap->pixels + bitmap->width * (bitmap->height - 1);
+  // bitmap 数据从上到下
+  uint8 *destRow = (uint8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
+  for (int y = MinY; y < MaxY; ++y) {
+    uint32 *dest = (uint32 *)destRow;
+    uint32 *source = sourceRow;
+    for (int x = MinX; x < MaxX; ++x) {
+      *dest++ = *source++;
+    }
+    destRow += buffer->pitch;
+    sourceRow -= bitmap->width;
+  }
+}
+
 // https://www.cnblogs.com/Matrix_Yao/archive/2009/12/02/1615295.html
 // bmp 文件格式
 #pragma pack(push, 1)
 struct bitmap_header {
-  uint16 bfType;
-  uint32 bfSize;
-  uint16 bfReserved1;
-  uint16 bfReserved2;
-  uint32 bfOffBits;
+  uint16 fileType;
+  uint32 fileSize;
+  uint16 reserved1;
+  uint16 reserved2;
+  uint32 bitmapOffset;
+  uint32 size;
+  int32 width;
+  int32 height;
+  uint16 planes;
+  uint16 bitsPerPixel;
+  uint32 compression;
+  uint32 sizeOfBitmap;
+  int32 horzResolution;
+  int32 vertResolution;
+  uint32 colorsUsed;
+  uint32 colorsImportant;
+
+  uint32 redMask;
+  uint32 greenMask;
+  uint32 blueMask;
 };
 #pragma pack(pop)
 
-static uint32 *DEBUGLoadBMP(thread_context *thread, debug_platform_read_entire_file *readEntireFile, const char *fileName) {
-  uint32 *result = nullptr;
+static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_entire_file *readEntireFile, const char *fileName) {
+  loaded_bitmap result = {};
 
   debug_read_file_result readFileResult = readEntireFile(thread, fileName);
   if (readFileResult.fileSize != 0) {
     bitmap_header *header = (bitmap_header *)readFileResult.contents;
-    result = (uint32 *)((uint8 *)header + header->bfOffBits);
+    uint32 *pixels = (uint32 *)((uint8 *)header + header->bitmapOffset);
+
+    result.pixels = pixels;
+    result.width = header->width;
+    result.height = header->height;
+
+    uint32 *sourceDest = pixels;
+    for (int y = 0; y < result.height; ++y) {
+      for (int x = 0; x < result.width; ++x) {
+        // RR GG BB AA -> AA RR GG BB
+        *sourceDest = (*sourceDest >> 8) | (*sourceDest << 24);
+        ++sourceDest;
+      }
+    }
   }
 
   return result;
@@ -116,7 +169,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
-    gameState->pixelPointer = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
+    gameState->backdrop = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
+    gameState->heroHead = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_hero_front_head.bmp");
+    gameState->heroCape = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_hero_front_cape.bmp");
+    gameState->heroTorso = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_hero_front_torso.bmp");
 
     gameState->playerP.absTileX = 1;
     gameState->playerP.absTileY = 3;
@@ -139,7 +195,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     tileMap->chunkDim = (1 << tileMap->chunkShift);
 
     tileMap->tileSideInMeters = 1.4f;
-    tileMap->tileSideInPixels = 6;
+    tileMap->tileSideInPixels = 60;
     tileMap->metersToPixels = (float)tileMap->tileSideInPixels / (float)tileMap->tileSideInMeters;
 
     tileMap->tileChunkCountX = 128;
@@ -322,18 +378,19 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   }
 
   drawRectangle(buffer, 0.0f, (float)buffer->width, 0.0f, (float)buffer->height, 1.0f, 0.0f, 1.0f);
+  drawBitmap(buffer, &gameState->backdrop, 0, 0);
 
   float screenCenterX = 0.5f * (float)buffer->width;
   float screenCenterY = 0.5f * (float)buffer->height;
 
-  for (int32 relRow = -100; relRow < 100; ++relRow) {
-    for (int32 relColumn = -200; relColumn < 200; ++relColumn) {
+  for (int32 relRow = -10; relRow < 10; ++relRow) {
+    for (int32 relColumn = -20; relColumn < 20; ++relColumn) {
       uint32 column = gameState->playerP.absTileX + relColumn;
       uint32 row = gameState->playerP.absTileY + relRow;
       uint32 tileID = getTileValue(tileMap, column, row, gameState->playerP.absTileZ);
 
       // 零表示空
-      if (tileID == 0) {
+      if (tileID < 2) {
         continue;
       }
 
@@ -372,6 +429,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
                 playerLeft, playerLeft + playerWidth * tileMap->metersToPixels,
                 playerTop, playerTop + playerHeight * tileMap->metersToPixels,
                 playerR, playerG, playerB);
+
+  drawBitmap(buffer, &gameState->heroHead, playerLeft, playerTop);
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {
