@@ -59,6 +59,10 @@ Learn about the [Handmade Hero](https://mollyrocket.com/#handmade)
 
 ## 编译器优化
 
+一些编译器内置方法和CPU内置指令
+
+`_BitScanForward`
+
 
 ## 游戏手柄死区
 
@@ -76,3 +80,5 @@ DLL 链接加载
 
 遇到一个不熟悉的文件格式  
 可以创建一个相关格式文件，然后清除所有像素，在四个对角设计像素（红蓝绿白）等观察数据格式进行调试
+
+Alpha 通道混合减少锯齿，使边缘更平滑

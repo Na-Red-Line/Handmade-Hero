@@ -99,7 +99,30 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap, flo
     uint32 *dest = (uint32 *)destRow;
     uint32 *source = sourceRow;
     for (int x = MinX; x < MaxX; ++x) {
-      *dest++ = *source++;
+
+      uint32 S = *source;
+      uint32 D = *dest;
+
+      float alpha = (float)((S >> 24) & 0XFF) / 256;
+      float SR = (float)((S >> 16) & 0XFF);
+      float SG = (float)((S >> 8) & 0XFF);
+      float SB = (float)((S >> 0) & 0XFF);
+
+      float DR = (float)((D >> 16) & 0XFF);
+      float DG = (float)((D >> 8) & 0XFF);
+      float DB = (float)((D >> 0) & 0XFF);
+
+#define MX(C) (D##C - alpha * (D##C - S##C))
+      float R = MX(R);
+      float G = MX(G);
+      float B = MX(B);
+
+      *dest = (((uint32)(R + 0.5f) << 16) |
+               ((uint32)(G + 0.5f) << 8) |
+               ((uint32)(B + 0.5f) << 0));
+
+      dest++;
+      source++;
     }
     destRow += buffer->pitch;
     sourceRow -= bitmap->width;
@@ -145,12 +168,30 @@ static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_en
     result.width = header->width;
     result.height = header->height;
 
+    uint32 redMask = header->redMask;
+    uint32 greenMask = header->greenMask;
+    uint32 blueMask = header->blueMask;
+    uint32 alphaMask = ~(redMask | greenMask | blueMask);
+
+    bit_scan_result redShift = findLeastSignificantSetBit(redMask);
+    bit_scan_result greenShift = findLeastSignificantSetBit(greenMask);
+    bit_scan_result blueShift = findLeastSignificantSetBit(blueMask);
+    bit_scan_result alphaShift = findLeastSignificantSetBit(alphaMask);
+
+    assert(redShift.found);
+    assert(greenShift.found);
+    assert(blueShift.found);
+    assert(alphaShift.found);
+
     uint32 *sourceDest = pixels;
     for (int y = 0; y < result.height; ++y) {
       for (int x = 0; x < result.width; ++x) {
         // RR GG BB AA -> AA RR GG BB
-        *sourceDest = (*sourceDest >> 8) | (*sourceDest << 24);
-        ++sourceDest;
+        uint32 C = *sourceDest;
+        *sourceDest++ = ((((C >> alphaShift.index) & 0XFF) << 24) |
+                         (((C >> redShift.index) & 0XFF) << 16) |
+                         (((C >> greenShift.index) & 0XFF) << 8) |
+                         (((C >> blueShift.index) & 0XFF) << 0));
       }
     }
   }
