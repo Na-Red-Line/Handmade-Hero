@@ -130,16 +130,19 @@ static FILETIME winGetLastWriteTime(char *filename) {
   return lastWriteTime;
 }
 
-static win_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName) {
+static win_game_code winLoadGameCode(char *sourceDLLName, char *tempDLLName, char *lockFileName) {
   win_game_code result = {};
 
-  result.DLLLastWriteTime = winGetLastWriteTime(sourceDLLName);
-  CopyFileA(sourceDLLName, tempDLLName, FALSE);
-  result.gameCodeDLL = LoadLibraryA(tempDLLName);
-  if (result.gameCodeDLL) {
-    result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
-    result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
-    result.isValid = result.updateAndRender && result.getSoundSamples;
+  WIN32_FILE_ATTRIBUTE_DATA ignored;
+  if (!GetFileAttributesExA(lockFileName, GetFileExInfoStandard, &ignored)) {
+    result.DLLLastWriteTime = winGetLastWriteTime(sourceDLLName);
+    CopyFileA(sourceDLLName, tempDLLName, FALSE);
+    result.gameCodeDLL = LoadLibraryA(tempDLLName);
+    if (result.gameCodeDLL) {
+      result.updateAndRender = (game_update_and_render *)GetProcAddress(result.gameCodeDLL, "gameUpdateAndRender");
+      result.getSoundSamples = (game_get_sound_samples *)GetProcAddress(result.gameCodeDLL, "gameGetSoundSamples");
+      result.isValid = result.updateAndRender && result.getSoundSamples;
+    }
   }
 
   if (!result.isValid) {
@@ -682,10 +685,13 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   char tempGameCodeDLLFullPath[WIN_STATE_FILE_NAME_COUNT];
   winBuildEXEPathFileName(&winState, "handmade_temp.dll", tempGameCodeDLLFullPath);
 
+  char gameCodeLockFullPath[WIN_STATE_FILE_NAME_COUNT];
+  winBuildEXEPathFileName(&winState, "lock.tmp", gameCodeLockFullPath);
+
   winLoadXInput();
 
   HDC deviceContext = GetDC(window);
-  winResizeDIBSection(&globalBackBuffer, 1920 * 3 / 4, 1080 * 3 / 4);
+  winResizeDIBSection(&globalBackBuffer, 960, 540);
 
   // 获取当前设备屏幕刷新率
   int monitorRefresHz = 144;
@@ -783,15 +789,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   LARGE_INTEGER flipWallClock = winGetWallClock();
   // CPU命令计数器
   uint64 lastCycleCount = __rdtsc();
-
-  win_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
+  win_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath, gameCodeLockFullPath);
 
   while (globalRuning) {
     // 检测DLL文件更新重新读取DLL文件
     FILETIME newDLLWriteTime = winGetLastWriteTime(sourceGameCodeDLLFullPath);
     if (CompareFileTime(&newDLLWriteTime, &gameCode.DLLLastWriteTime) != 0) {
       winUnloadGameCode(&gameCode);
-      gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath);
+      gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath, gameCodeLockFullPath);
     }
 
     newInput->dtForFrame = targetSecondsPerFrame;

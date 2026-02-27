@@ -129,3 +129,15 @@ inline void setTileValue(memory_arena *arena, tile_map *tileMap,
 inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
   return a->absTileX == b->absTileX && a->absTileY == b->absTileY && a->absTileZ == b->absTileZ;
 }
+
+inline tile_map_difference subtract(tile_map *tileMap, tile_map_position *a, tile_map_position *b) {
+  tile_map_difference result = {};
+
+  float dTileX = (float)a->absTileX - (float)b->absTileX;
+  float dTileY = (float)a->absTileY - (float)b->absTileY;
+
+  result.dX = dTileX * tileMap->tileSideInMeters + (a->tileRelX - b->tileRelX);
+  result.dY = dTileY * tileMap->tileSideInMeters + (a->tileRelY - b->tileRelY);
+
+  return result;
+}

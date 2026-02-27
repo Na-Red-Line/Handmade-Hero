@@ -40,6 +40,7 @@ if (-not $isDLL) {
 	$CC = $common + $LIBS + $XLINKER + @($winPath,'-o','HandmadeHero.exe')
 	& clang++ $CC
 } else {
+	Set-Content -Path 'lock.tmp' -Value '' -NoNewline
 	$XLINKER = @('-Wl,/EXPORT:gameUpdateAndRender,/EXPORT:gameGetSoundSamples')
 
 	# pass PDB name to linker so the binary references the unique PDB
@@ -48,6 +49,7 @@ if (-not $isDLL) {
 
 	$CC = $common + $XLINKER + @('-shared',$handmadePath,'-o','handmade.dll')
 	& clang++ $CC
+	Remove-Item -Force 'lock.tmp'
 }
 
 Pop-Location
