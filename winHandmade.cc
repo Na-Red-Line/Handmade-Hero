@@ -7,11 +7,18 @@
 
 static bool globalRuning;
 static bool globalPause;
-static bool globalMouseOn;
+
 static win_offscreen_buffer globalBackBuffer;
 static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
+
 // 每秒计数器递增的次数
 static LONGLONG globalPerfCountFrequency;
+
+// 显示鼠标
+static bool globalMouseOn;
+
+// 全屏切换坐标
+static WINDOWPLACEMENT globalWindowPosition = {sizeof(globalWindowPosition)};
 
 // 优雅降级
 #define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
@@ -263,6 +270,16 @@ static void winResizeDIBSection(win_offscreen_buffer *buffer, int width, int hei
 }
 
 static void winDisplayBufferInWindow(win_offscreen_buffer *buffer, HDC deviceContext, int windowWidth, int windowHeight) {
+  if ((windowWidth >= 2 * buffer->width) && (windowHeight >= 2 * buffer->height)) {
+    StretchDIBits(deviceContext,
+                  0, 0, windowWidth, windowHeight,
+                  0, 0, buffer->width, buffer->height,
+                  buffer->memory,
+                  &buffer->info,
+                  DIB_RGB_COLORS, SRCCOPY);
+    return;
+  }
+
   constexpr int offsetX = 10;
   constexpr int offsetY = 10;
 
@@ -429,6 +446,31 @@ static void winPlayBackInput(win_state *winState, game_input *newInput) {
   }
 }
 
+// 切换全屏
+static void toggleFullscreen(HWND window) {
+  DWORD style = GetWindowLong(window, GWL_STYLE);
+
+  if (style & WS_OVERLAPPEDWINDOW) {
+    MONITORINFO MonitorInfo = {sizeof(MonitorInfo)};
+
+    if (GetWindowPlacement(window, &globalWindowPosition) &&
+        GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY), &MonitorInfo)) {
+      SetWindowLong(window, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
+      SetWindowPos(window, HWND_TOP,
+                   MonitorInfo.rcMonitor.left, MonitorInfo.rcMonitor.top,
+                   MonitorInfo.rcMonitor.right - MonitorInfo.rcMonitor.left,
+                   MonitorInfo.rcMonitor.bottom - MonitorInfo.rcMonitor.top,
+                   SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+  } else {
+    SetWindowLong(window, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+    SetWindowPlacement(window, &globalWindowPosition);
+    SetWindowPos(window, 0, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER |
+                     SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+  }
+}
+
 // 处理windows消息
 static void winProcessPendingMessage(win_state *state, game_controller_input *keyboardController) {
   MSG msg;
@@ -498,7 +540,15 @@ static void winProcessPendingMessage(win_state *state, game_controller_input *ke
 
       // 系统按键 ALT + F4
       int32 altKeyWasDown = msg.lParam & (1 << 29);
-      if (VKCode == VK_F4 && altKeyWasDown) globalRuning = false;
+      if (altKeyWasDown && isDown) {
+        if (VKCode == VK_F4 && altKeyWasDown) {
+          globalRuning = false;
+        } else if (VKCode == VK_RETURN) {
+          if (msg.hwnd) {
+            toggleFullscreen(msg.hwnd);
+          }
+        }
+      }
 
       break;
     }
@@ -628,6 +678,14 @@ LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lPa
     globalRuning = false;
     break;
 
+  case WM_SETCURSOR:
+    if (globalMouseOn) {
+      result = DefWindowProc(window, message, wParam, lParam);
+    } else {
+      SetCursor(NULL);
+    }
+    break;
+
   case WM_ACTIVATEAPP:
     OutputDebugStringA("WM_ACTIVATEAPP\n");
     break;
@@ -655,6 +713,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   wc.style = CS_HREDRAW | CS_VREDRAW;
   wc.lpfnWndProc = WindowProc;
   wc.hInstance = instance;
+  wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
   wc.lpszClassName = L"HandmadeHero";
 
   RegisterClass(&wc);
