@@ -1,10 +1,11 @@
 #pragma once
 
 #include "handmade_platform.h"
+#include "handmade_math.h"
 
 struct tile_map_difference {
-  float dX;
-  float dY;
+  v2 dXY;
+  float dZ;
 };
 
 struct tile_map_position {
@@ -15,8 +16,7 @@ struct tile_map_position {
   uint32 absTileY;
   uint32 absTileZ;
 
-  float tileRelX;
-  float tileRelY;
+  v2 offset;
 };
 
 struct tile_chunk_position {

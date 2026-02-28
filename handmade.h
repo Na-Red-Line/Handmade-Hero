@@ -1,6 +1,7 @@
 #pragma once
 
 #include "handmade_platform.h"
+#include "handmade_math.h"
 
 #include <assert.h>
 #include <math.h>

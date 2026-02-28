@@ -14,8 +14,9 @@ static LPDIRECTSOUNDBUFFER globalDSoundBuffer;
 // 每秒计数器递增的次数
 static LONGLONG globalPerfCountFrequency;
 
+// NOTE debug模式下显示鼠标
 // 显示鼠标
-static bool globalMouseOn;
+static bool globalMouseOn = true;
 
 // 全屏切换坐标
 static WINDOWPLACEMENT globalWindowPosition = {sizeof(globalWindowPosition)};

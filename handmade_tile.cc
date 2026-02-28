@@ -21,8 +21,8 @@ inline void recanonicalizeCoord(tile_map *tileMap, uint32 *tile, float *tileRel)
 inline tile_map_position recanonicalizePosition(tile_map *tileMap, tile_map_position pos) {
   tile_map_position result = pos;
 
-  recanonicalizeCoord(tileMap, &result.absTileX, &result.tileRelX);
-  recanonicalizeCoord(tileMap, &result.absTileY, &result.tileRelY);
+  recanonicalizeCoord(tileMap, &result.absTileX, &result.offset.X);
+  recanonicalizeCoord(tileMap, &result.absTileY, &result.offset.Y);
 
   return result;
 }
@@ -133,11 +133,11 @@ inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
 inline tile_map_difference subtract(tile_map *tileMap, tile_map_position *a, tile_map_position *b) {
   tile_map_difference result = {};
 
-  float dTileX = (float)a->absTileX - (float)b->absTileX;
-  float dTileY = (float)a->absTileY - (float)b->absTileY;
+  v2 dTileXY = {(float)a->absTileX - (float)b->absTileX, (float)a->absTileY - (float)b->absTileY};
+  float dTileZ = (float)a->absTileZ - (float)b->absTileZ;
 
-  result.dX = dTileX * tileMap->tileSideInMeters + (a->tileRelX - b->tileRelX);
-  result.dY = dTileY * tileMap->tileSideInMeters + (a->tileRelY - b->tileRelY);
+  result.dXY = dTileXY * tileMap->tileSideInMeters + (a->offset - b->offset);
+  result.dZ = tileMap->tileSideInMeters * dTileZ;
 
   return result;
 }
