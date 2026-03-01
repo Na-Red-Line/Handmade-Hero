@@ -409,37 +409,44 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       // NOTE Use analog movement tuning
     } else {
       // NOTE Use digital movement tuning
-      v2 dPlayer = {};
+      // 加速度
+      v2 ddPlayer = {};
 
       if (controller.moveUp.endDown) {
         gameState->heroFacingDirection = 1;
-        dPlayer.Y = 1.0f;
+        ddPlayer.Y = 1.0f;
       }
       if (controller.moveDown.endDown) {
         gameState->heroFacingDirection = 3;
-        dPlayer.Y = -1.0f;
+        ddPlayer.Y = -1.0f;
       }
       if (controller.moveLeft.endDown) {
         gameState->heroFacingDirection = 2;
-        dPlayer.X = -1.0f;
+        ddPlayer.X = -1.0f;
       }
       if (controller.moveRight.endDown) {
         gameState->heroFacingDirection = 0;
-        dPlayer.X = 1.0f;
+        ddPlayer.X = 1.0f;
       }
 
+      if (ddPlayer.X && ddPlayer.Y) {
+        ddPlayer *= 0.707106781187f;
+      }
+
+      // m/s^2
       float playerSpeed = 5.0f;
       if (controller.actionUp.endDown) {
         playerSpeed = 10.0f;
       }
-
-      dPlayer *= playerSpeed;
-      if (dPlayer.X && dPlayer.Y) {
-        dPlayer *= 0.707106781187f;
-      }
+      ddPlayer *= playerSpeed;
+      ddPlayer += -1.5f * gameState->dPlayerP;
 
       tile_map_position newPlayerP = gameState->playerP;
-      newPlayerP.offset += gameInput->dtForFrame * dPlayer;
+
+      // 位置 p = 0.5 * a * t^2 + v * t + p
+      newPlayerP.offset = (0.5f * ddPlayer * square(gameInput->dtForFrame) + gameState->dPlayerP * gameInput->dtForFrame + newPlayerP.offset);
+      // 速度
+      gameState->dPlayerP = ddPlayer * gameInput->dtForFrame + gameState->dPlayerP;
       newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
 
       tile_map_position playerLeft = newPlayerP;

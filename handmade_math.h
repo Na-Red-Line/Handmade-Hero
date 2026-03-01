@@ -48,3 +48,8 @@ v2 &operator-=(v2 &A, v2 B) {
   A = A - B;
   return A;
 }
+
+inline float square(float A) {
+  float result = A * A;
+  return result;
+}
