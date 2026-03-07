@@ -1,55 +1,36 @@
-# flags
-$DBG = @()
-$WARN = @()
-$MACRO = @()
-$isDLL = $false
+$COMMON_COMPILER_FLAGS = @('-std=gnu++14','-fno-exceptions','-fno-rtti','-g','-gcodeview','-O0','-DHANDMADE_INTERNAL=1','-DRECORD=0')
 
-switch -Wildcard ($args) {
-	'-clean' {
-		if (Test-Path 'build\debug') { Remove-Item -Recurse -Force 'build\debug' }
-		New-Item -Path 'build\debug' -ItemType Directory -Force | Out-Null
-		exit 0
-	}
-	'-debug' { $DBG = @('-g','-gcodeview','-O0') }
-	'-dll' { $isDLL = $true }
-	'-warn' { $WARN = @(
-			        '-Wall',
-			        '-Wextra',
-			        '-Wshadow',
-			        '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/um/',
-			        '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/shared/'
-							) }
-	default { if ($_ -like '-D*') { $MACRO += $_ } }
+$WARN = @('-Wall','-Wextra','-Wshadow',
+					'-Wno-gnu-anonymous-struct',
+					'-Wno-unused-parameter',
+					'-Wno-unused-variable',
+					'-Wno-unused-function',
+			    '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/um/',
+			    '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/shared/')
+
+if ($args[0] -eq "-clean") {
+	if (Test-Path 'build\debug') { Remove-Item -Recurse -Force 'build\debug' }
+	New-Item -Path 'build\debug' -ItemType Directory -Force | Out-Null
+	exit 0
 }
 
-$CXXFLAGS = @('-std=gnu++17','-fno-exceptions','-fno-rtti')
+$INPUT_PATH =  if ($args[0] -eq "-dll") { (Get-Location).Path + '\handmade.cc' } else { (Get-Location).Path + '\winHandmade.cc' }
 
 Push-Location 'build\debug'
 
-# build flags (concatenate; empty arrays are fine)
-$common = $CXXFLAGS + $DBG + $WARN + $MACRO
-
-# find sources from repo path
-$rootPath = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-$winPath = $rootPath + '\winHandmade.cc'
-$handmadePath =  $rootPath + '\handmade.cc'
-
-if (-not $isDLL) {
-	$LIBS = @('-luser32','-lgdi32','-lXinput','-lWinmm')
-	$XLINKER = @('-Wl,/SUBSYSTEM:WINDOWS,/OPT:REF,/OPT:ICF')
-	$CC = $common + $LIBS + $XLINKER + @($winPath,'-o','HandmadeHero.exe')
-	& clang++ $CC
-} else {
+if ($args[0] -eq "-dll") {
 	Set-Content -Path 'lock.tmp' -Value '' -NoNewline
 	$XLINKER = @('-Wl,/EXPORT:gameUpdateAndRender,/EXPORT:gameGetSoundSamples')
-
-	# pass PDB name to linker so the binary references the unique PDB
-	$pdbName = "handmade_$(Get-Random).pdb"
-	$XLINKER += @('-Wl,/PDB:' + $pdbName)
-
-	$CC = $common + $XLINKER + @('-shared',$handmadePath,'-o','handmade.dll')
+	$PDB_NAME = "handmade_$(Get-Random).pdb"
+	$XLINKER += @('-Wl,/PDB:' + $PDB_NAME)
+	$CC = $COMMON_COMPILER_FLAGS + $WARN + $XLINKER + @('-shared',$INPUT_PATH,'-o','handmade.dll')
 	& clang++ $CC
 	Remove-Item -Force 'lock.tmp'
+} else {
+	$LIBS = @('-luser32','-lgdi32','-lXinput','-lWinmm')
+	$XLINKER = @('-Wl,/SUBSYSTEM:WINDOWS,/OPT:REF,/OPT:ICF')
+	$CC = $COMMON_COMPILER_FLAGS + $WARN + $LIBS + $XLINKER + @($INPUT_PATH,'-o','HandmadeHero.exe')
+	& clang++ $CC
 }
 
 Pop-Location

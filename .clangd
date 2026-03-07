@@ -1,0 +1,24 @@
+CompileFlags:
+  Add:
+    - -xc++
+    - -std=gnu++14
+    - -fno-exceptions
+    - -fno-rtti
+    - -Wall
+    - -Wextra
+    - -Wshadow
+    - -Wno-unused-parameter
+    - -Wno-unused-variable
+    - -Wno-unused-function
+    - -DHANDMADE_INTERNAL=1
+    - -DRECORD=1
+
+Index:
+  Background: Build
+
+InlayHints:
+  Enabled: No
+
+Diagnostics:
+  Suppress:
+    - unused-includes
