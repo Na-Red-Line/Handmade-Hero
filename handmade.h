@@ -11,14 +11,14 @@ constexpr float PI = 3.14159265359f;
 template <typename T, int N>
 constexpr int arr_length(T (&)[N]) { return N; }
 
-constexpr uint64 KiloBytes(uint64 x) { return x << 10; }
-constexpr uint64 MegaBytes(uint64 x) { return KiloBytes(x) << 10; }
-constexpr uint64 GigaBytes(uint64 x) { return MegaBytes(x) << 10; }
-constexpr uint64 TeraBytes(uint64 x) { return GigaBytes(x) << 10; }
+constexpr u64 KiloBytes(u64 x) { return x << 10; }
+constexpr u64 MegaBytes(u64 x) { return KiloBytes(x) << 10; }
+constexpr u64 GigaBytes(u64 x) { return MegaBytes(x) << 10; }
+constexpr u64 TeraBytes(u64 x) { return GigaBytes(x) << 10; }
 
-constexpr uint32 saveCastUint64(uint64 value) {
+constexpr u32 saveCastUint64(u64 value) {
   assert(value <= 0xffffffff);
-  return (uint32)(value);
+  return (u32)(value);
 }
 
 //
@@ -27,11 +27,11 @@ constexpr uint32 saveCastUint64(uint64 value) {
 
 struct memory_arena {
   size_t size;
-  uint8 *base;
+  u8 *base;
   size_t used;
 };
 
-static void initializerArena(memory_arena *arena, size_t size, uint8 *base) {
+static void initializerArena(memory_arena *arena, size_t size, u8 *base) {
   arena->size = size;
   arena->base = base;
   arena->used = 0;
@@ -55,9 +55,9 @@ struct world {
 };
 
 struct loaded_bitmap {
-  int32 width;
-  int32 height;
-  uint32 *pixels;
+  i32 width;
+  i32 height;
+  u32 *pixels;
 };
 
 struct hero_bitmaps {
@@ -78,6 +78,6 @@ struct game_state {
   v2 dPlayerP;
 
   loaded_bitmap backdrop;
-  uint32 heroFacingDirection;
+  u32 heroFacingDirection;
   hero_bitmaps heroBitmaps[4];
 };

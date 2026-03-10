@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-int random() {
+inline int random() {
   static bool initializer = false;
   if (!initializer) {
     // srand((unsigned)time(nullptr));

@@ -23,14 +23,14 @@ struct win_window_dimension {
 };
 
 struct win_sound_output {
-  uint32 runingSampleIndex; // 索引
-  int samplesPerSecond;     // 赫兹
-  int toneVolume;           // 音高
-  int toneHz;               // 一秒钟震动次数
-  int wavePeroid;           // 每秒采样数
-  int bytesPerSample;       // 双声道，左右各16比特，2字节
-  int DSoundBufferSize;     // 缓冲区大小
-  int safetyBytes;          // 每帧缓冲区安全值
+  u32 runingSampleIndex; // 索引
+  int samplesPerSecond;  // 赫兹
+  int toneVolume;        // 音高
+  int toneHz;            // 一秒钟震动次数
+  int wavePeroid;        // 每秒采样数
+  int bytesPerSample;    // 双声道，左右各16比特，2字节
+  int DSoundBufferSize;  // 缓冲区大小
+  int safetyBytes;       // 每帧缓冲区安全值
 };
 
 struct win_debug_time_marker {
@@ -65,7 +65,7 @@ struct win_replay_buffer {
 // 游戏状态
 struct win_state {
   // 游戏内存总大小
-  uint64 totalSize;
+  u64 totalSize;
   // 内存基址
   void *gameMemoryBlock;
   win_replay_buffer replayBuffers[4];

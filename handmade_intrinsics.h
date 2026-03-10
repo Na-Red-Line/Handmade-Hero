@@ -4,23 +4,23 @@
 
 #include <math.h>
 
-inline int32 roundFloatToInt32(float f32) {
-  int32 result = (int32)roundf(f32);
+inline i32 roundFloatToI32(float f32) {
+  i32 result = (i32)roundf(f32);
   return result;
 }
 
-inline int32 roundFloatToUInt32(float f32) {
-  uint32 result = (uint32)roundf(f32);
+inline i32 roundFloatToU32(float f32) {
+  u32 result = (u32)roundf(f32);
   return result;
 }
 
-inline int32 floorFloatToInt32(float f32) {
-  int32 result = (int32)floorf(f32);
+inline i32 floorFloatToI32(float f32) {
+  i32 result = (i32)floorf(f32);
   return result;
 }
 
-inline int32 truncateFloatToInt32(float f32) {
-  int32 result = (int32)f32;
+inline i32 truncateFloatToI32(float f32) {
+  i32 result = (i32)f32;
   return result;
 }
 
@@ -41,16 +41,16 @@ inline float atan2(float Y, float X) {
 
 struct bit_scan_result {
   bool found;
-  uint32 index;
+  u32 index;
 };
 
-inline bit_scan_result findLeastSignificantSetBit(uint32 value) {
+inline bit_scan_result findLeastSignificantSetBit(u32 value) {
   bit_scan_result result = {};
 
 #if COMPILER_MSVC
   result.found = _BitScanForward((unsigned long *)&result.index, value);
 #else
-  for (uint32 i = 0; i < 32; ++i) {
+  for (u32 i = 0; i < 32; ++i) {
     if (value & (1 << i)) {
       result.index = i;
       result.found = true;

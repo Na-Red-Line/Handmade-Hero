@@ -174,7 +174,7 @@ static void winUnloadGameCode(win_game_code *gameCode) {
 }
 
 // 初始化音频API
-static void winLoadInitDSound(HWND window, int32 samplesPerSecond, int32 bufferSize) {
+static void winLoadInitDSound(HWND window, i32 samplesPerSecond, i32 bufferSize) {
   // Load the dsound library
   HMODULE DSoundLibrary = LoadLibraryA("dsound.dll");
   if (DSoundLibrary)
@@ -310,8 +310,8 @@ static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, 
                                       0)))
     return;
 
-  int16 *buffer = (int16 *)sound_output_buffer->buffer;
-  int16 *sampleOut = (int16 *)region1;
+  i16 *buffer = (i16 *)sound_output_buffer->buffer;
+  i16 *sampleOut = (i16 *)region1;
   DWORD region1SampleCount = region1Size / soundOutput->bytesPerSample;
   for (DWORD sampleIndex = 0; sampleIndex < region1SampleCount; ++sampleIndex) {
     *sampleOut++ = *buffer++;
@@ -319,7 +319,7 @@ static void winFillSoundBuffer(win_sound_output *soundOutput, DWORD byteToLock, 
     ++soundOutput->runingSampleIndex;
   }
 
-  sampleOut = (int16 *)region2;
+  sampleOut = (i16 *)region2;
   DWORD region2SampleCount = region2Size / soundOutput->bytesPerSample;
   for (DWORD sampleIndex = 0; sampleIndex < region2SampleCount; ++sampleIndex) {
     *sampleOut++ = *buffer++;
@@ -486,7 +486,7 @@ static void winProcessPendingMessage(win_state *state, game_controller_input *ke
     case WM_SYSKEYUP:   // 系统键释放
     case WM_KEYDOWN:    // 普通键按下
     case WM_KEYUP: {    // 普通键释放
-      uint64 VKCode = msg.wParam;
+      u64 VKCode = msg.wParam;
       boolean wasDown = (msg.lParam & (1 << 30)) != 0; //  之前 按下|松开
       boolean isDown = (msg.lParam & (1 << 31)) == 0;  // 当前 按下|松开
 
@@ -540,7 +540,7 @@ static void winProcessPendingMessage(win_state *state, game_controller_input *ke
       }
 
       // 系统按键 ALT + F4
-      int32 altKeyWasDown = msg.lParam & (1 << 29);
+      i32 altKeyWasDown = msg.lParam & (1 << 29);
       if (altKeyWasDown && isDown) {
         if (VKCode == VK_F4 && altKeyWasDown) {
           globalRuning = false;
@@ -770,7 +770,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.toneVolume = 3000;
   soundOutput.toneHz = 256;
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
-  soundOutput.bytesPerSample = sizeof(int16) * 2;
+  soundOutput.bytesPerSample = sizeof(i16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
   soundOutput.safetyBytes = (int)((float)soundOutput.DSoundBufferSize / (float)gameUpdateHz / 2.0f);
 
@@ -778,7 +778,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   winCleanSoundBuffer(&soundOutput);
   globalDSoundBuffer->Play(0, 0, DSBPLAY_LOOPING);
 
-  int16 *samples = (int16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+  i16 *samples = (i16 *)VirtualAlloc(0, soundOutput.DSoundBufferSize, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
 
 #if HANDMADE_INTERNAL
   LPVOID BaseAddress = (LPVOID)TeraBytes(2);
@@ -848,7 +848,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // 游戏更新时间
   LARGE_INTEGER flipWallClock = winGetWallClock();
   // CPU命令计数器
-  uint64 lastCycleCount = __rdtsc();
+  u64 lastCycleCount = __rdtsc();
   win_game_code gameCode = winLoadGameCode(sourceGameCodeDLLFullPath, tempGameCodeDLLFullPath, gameCodeLockFullPath);
 
   while (globalRuning) {
@@ -1087,8 +1087,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       // TODO 超过一帧 Logging
     }
 
-    uint64 endCycleCount = __rdtsc();
-    uint64 cycleCounterElapsed = endCycleCount - lastCycleCount;
+    u64 endCycleCount = __rdtsc();
+    u64 cycleCounterElapsed = endCycleCount - lastCycleCount;
     endCounter = winGetWallClock();
 
 #if 0

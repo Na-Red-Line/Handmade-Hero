@@ -5,7 +5,7 @@
 #include <stdio.h>
 
 static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_state *gameState) {
-  int16 *sampleOut = (int16 *)soundOutputBuffer.buffer;
+  i16 *sampleOut = (i16 *)soundOutputBuffer.buffer;
 
 #if 0
   float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)gameState->toneHz;
@@ -54,23 +54,23 @@ static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOf
 
 static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, float R, float G, float B) {
 
-  int32 MinX = roundFloatToInt32(Min.X);
-  int32 MaxX = roundFloatToInt32(Max.X);
-  int32 MinY = roundFloatToInt32(Min.Y);
-  int32 MaxY = roundFloatToInt32(Max.Y);
+  i32 MinX = roundFloatToI32(Min.X);
+  i32 MaxX = roundFloatToI32(Max.X);
+  i32 MinY = roundFloatToI32(Min.Y);
+  i32 MaxY = roundFloatToI32(Max.Y);
 
   if (MinX < 0) MinX = 0;
   if (MinY < 0) MinY = 0;
   if (MaxX > buffer->width) MaxX = buffer->width;
   if (MaxY > buffer->height) MaxY = buffer->height;
 
-  uint32 color = (roundFloatToUInt32(R * 255.0f) << 16) |
-                 (roundFloatToUInt32(G * 255.0f) << 8) |
-                 (roundFloatToUInt32(B * 255.0f) << 0);
+  u32 color = (roundFloatToU32(R * 255.0f) << 16) |
+              (roundFloatToU32(G * 255.0f) << 8) |
+              (roundFloatToU32(B * 255.0f) << 0);
 
-  uint8 *row = (uint8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
+  u8 *row = (u8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
   for (int y = MinY; y < MaxY; ++y) {
-    uint32 *pixel = (uint32 *)row;
+    u32 *pixel = (u32 *)row;
     for (int x = MinX; x < MaxX; ++x) {
       *pixel++ = color;
     }
@@ -80,23 +80,23 @@ static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, float R
 
 static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
                        float realX, float realY,
-                       int32 alignX, int32 alignY) {
+                       i32 alignX, i32 alignY) {
 
   realX -= (float)alignX;
   realY -= (float)alignY;
 
-  int32 MinX = roundFloatToInt32(realX);
-  int32 MinY = roundFloatToInt32(realY);
-  int32 MaxX = MinX + bitmap->width;
-  int32 MaxY = MinY + (float)bitmap->height;
+  i32 MinX = roundFloatToI32(realX);
+  i32 MinY = roundFloatToI32(realY);
+  i32 MaxX = MinX + bitmap->width;
+  i32 MaxY = MinY + (float)bitmap->height;
 
-  int32 sourceOffsetX = 0;
+  i32 sourceOffsetX = 0;
   if (MinX < 0) {
     sourceOffsetX = -MinX;
     MinX = 0;
   }
 
-  int32 sourceOffsetY = 0;
+  i32 sourceOffsetY = 0;
   if (MinY < 0) {
     sourceOffsetY = -MinY;
     MinY = 0;
@@ -110,16 +110,16 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
     MaxY = buffer->height;
   }
 
-  uint32 *sourceRow = bitmap->pixels + bitmap->width * (bitmap->height - 1);
+  u32 *sourceRow = bitmap->pixels + bitmap->width * (bitmap->height - 1);
   sourceRow += -sourceOffsetY * bitmap->width + sourceOffsetX;
-  uint8 *destRow = (uint8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
+  u8 *destRow = (u8 *)buffer->memory + MinY * buffer->pitch + MinX * buffer->bytesPerPixel;
   for (int y = MinY; y < MaxY; ++y) {
-    uint32 *dest = (uint32 *)destRow;
-    uint32 *source = sourceRow;
+    u32 *dest = (u32 *)destRow;
+    u32 *source = sourceRow;
     for (int x = MinX; x < MaxX; ++x) {
 
-      uint32 S = *source;
-      uint32 D = *dest;
+      u32 S = *source;
+      u32 D = *dest;
 
       float alpha = (float)((S >> 24) & 0XFF) / 255;
       float SR = (float)((S >> 16) & 0XFF);
@@ -135,9 +135,9 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
       float G = MX(G);
       float B = MX(B);
 
-      *dest = (((uint32)(R + 0.5f) << 16) |
-               ((uint32)(G + 0.5f) << 8) |
-               ((uint32)(B + 0.5f) << 0));
+      *dest = (((u32)(R + 0.5f) << 16) |
+               ((u32)(G + 0.5f) << 8) |
+               ((u32)(B + 0.5f) << 0));
 
       dest++;
       source++;
@@ -151,26 +151,26 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
 // bmp 文件格式
 #pragma pack(push, 1)
 struct bitmap_header {
-  uint16 fileType;
-  uint32 fileSize;
-  uint16 reserved1;
-  uint16 reserved2;
-  uint32 bitmapOffset;
-  uint32 size;
-  int32 width;
-  int32 height;
-  uint16 planes;
-  uint16 bitsPerPixel;
-  uint32 compression;
-  uint32 sizeOfBitmap;
-  int32 horzResolution;
-  int32 vertResolution;
-  uint32 colorsUsed;
-  uint32 colorsImportant;
+  u16 fileType;
+  u32 fileSize;
+  u16 reserved1;
+  u16 reserved2;
+  u32 bitmapOffset;
+  u32 size;
+  i32 width;
+  i32 height;
+  u16 planes;
+  u16 bitsPerPixel;
+  u32 compression;
+  u32 sizeOfBitmap;
+  i32 horzResolution;
+  i32 vertResolution;
+  u32 colorsUsed;
+  u32 colorsImportant;
 
-  uint32 redMask;
-  uint32 greenMask;
-  uint32 blueMask;
+  u32 redMask;
+  u32 greenMask;
+  u32 blueMask;
 };
 #pragma pack(pop)
 
@@ -180,16 +180,16 @@ static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_en
   debug_read_file_result readFileResult = readEntireFile(thread, fileName);
   if (readFileResult.fileSize != 0) {
     bitmap_header *header = (bitmap_header *)readFileResult.contents;
-    uint32 *pixels = (uint32 *)((uint8 *)header + header->bitmapOffset);
+    u32 *pixels = (u32 *)((u8 *)header + header->bitmapOffset);
 
     result.pixels = pixels;
     result.width = header->width;
     result.height = header->height;
 
-    uint32 redMask = header->redMask;
-    uint32 greenMask = header->greenMask;
-    uint32 blueMask = header->blueMask;
-    uint32 alphaMask = ~(redMask | greenMask | blueMask);
+    u32 redMask = header->redMask;
+    u32 greenMask = header->greenMask;
+    u32 blueMask = header->blueMask;
+    u32 alphaMask = ~(redMask | greenMask | blueMask);
 
     bit_scan_result redShift = findLeastSignificantSetBit(redMask);
     bit_scan_result greenShift = findLeastSignificantSetBit(greenMask);
@@ -201,11 +201,11 @@ static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_en
     assert(blueShift.found);
     assert(alphaShift.found);
 
-    uint32 *sourceDest = pixels;
+    u32 *sourceDest = pixels;
     for (int y = 0; y < result.height; ++y) {
       for (int x = 0; x < result.width; ++x) {
         // RR GG BB AA -> AA RR GG BB
-        uint32 C = *sourceDest;
+        u32 C = *sourceDest;
         *sourceDest++ = ((((C >> alphaShift.index) & 0XFF) << 24) |
                          (((C >> redShift.index) & 0XFF) << 16) |
                          (((C >> greenShift.index) & 0XFF) << 8) |
@@ -270,7 +270,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
     initializerArena(&gameState->worldArena,
                      memory->permanentStorageSize - sizeof(game_state),
-                     (uint8 *)memory->permanentStorage + sizeof(game_state));
+                     (u8 *)memory->permanentStorage + sizeof(game_state));
 
     gameState->world = pushStruct(&gameState->worldArena, world);
     world *world = gameState->world;
@@ -293,11 +293,11 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
                                     tileMap->tileChunkCountX * tileMap->tileChunkCountY * tileMap->tileChunkCountZ,
                                     tile_chunk);
 
-    uint32 tilesPerWidth = 17;
-    uint32 tilesPerHeight = 9;
-    uint32 screenX = 0;
-    uint32 screenY = 0;
-    uint32 absTileZ = 0;
+    u32 tilesPerWidth = 17;
+    u32 tilesPerHeight = 9;
+    u32 screenX = 0;
+    u32 screenY = 0;
+    u32 absTileZ = 0;
 
     bool doorLeft = false;
     bool doorRight = false;
@@ -326,10 +326,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         doorTop = true;
       }
 
-      for (uint32 tileY = 0; tileY < tilesPerHeight; ++tileY) {
-        for (uint32 tileX = 0; tileX < tilesPerWidth; ++tileX) {
-          uint32 absTileX = (screenX * tilesPerWidth) + tileX;
-          uint32 absTileY = (screenY * tilesPerHeight) + tileY;
+      for (u32 tileY = 0; tileY < tilesPerHeight; ++tileY) {
+        for (u32 tileX = 0; tileX < tilesPerWidth; ++tileX) {
+          u32 absTileX = (screenX * tilesPerWidth) + tileX;
+          u32 absTileY = (screenY * tilesPerHeight) + tileY;
 
           int value = 1;
 
@@ -462,7 +462,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
           isTileMapPointEmpty(tileMap, playerRight)) {
 
         if (!areOnSameTile(&gameState->playerP, &newPlayerP)) {
-          uint32 tileValue = getTileValue(world->tileMap, newPlayerP);
+          u32 tileValue = getTileValue(world->tileMap, newPlayerP);
           if (tileValue == 3) {
             newPlayerP.absTileZ += 1;
           }
@@ -496,11 +496,11 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   float screenCenterX = 0.5f * (float)buffer->width;
   float screenCenterY = 0.5f * (float)buffer->height;
 
-  for (int32 relRow = -10; relRow < 10; ++relRow) {
-    for (int32 relColumn = -20; relColumn < 20; ++relColumn) {
-      uint32 column = gameState->CameraP.absTileX + relColumn;
-      uint32 row = gameState->CameraP.absTileY + relRow;
-      uint32 tileID = getTileValue(tileMap, column, row, gameState->CameraP.absTileZ);
+  for (i32 relRow = -10; relRow < 10; ++relRow) {
+    for (i32 relColumn = -20; relColumn < 20; ++relColumn) {
+      u32 column = gameState->CameraP.absTileX + relColumn;
+      u32 row = gameState->CameraP.absTileY + relRow;
+      u32 tileID = getTileValue(tileMap, column, row, gameState->CameraP.absTileZ);
 
       // 零表示空
       if (tileID < 2) {

@@ -2,15 +2,15 @@
 
 #include <stdint.h>
 
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
 
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
 
 struct thread_context {
   int placeholder;
@@ -42,7 +42,7 @@ struct thread_context {
 // IMPORT 测试使用 平台无关文件IO
 
 struct debug_read_file_result {
-  uint32 fileSize;
+  u32 fileSize;
   void *contents;
 };
 
@@ -52,7 +52,7 @@ typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) debug_read_file_result name(thread_context *thread, const char *filename)
 typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
 
-#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(thread_context *thread, const char *filename, uint32 memorySize, void *memory)
+#define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(thread_context *thread, const char *filename, u32 memorySize, void *memory)
 typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 
 #endif
@@ -75,7 +75,7 @@ struct game_sound_output_buffer {
 
 struct game_button_state {
   int halfTransitionCount;
-  int32 endDown;
+  i32 endDown;
 };
 
 struct game_controller_input {
@@ -129,11 +129,11 @@ struct game_memory {
   bool isInitialized;
 
   // NOTE 永久游戏内存，暂为 game_state
-  uint64 permanentStorageSize;
+  u64 permanentStorageSize;
   void *permanentStorage;
 
   // NOTE 动态游戏内存，暂为 game_state
-  uint64 transientStorageSize;
+  u64 transientStorageSize;
   void *transientStorage;
 
 #if HANDMADE_INTERNAL
