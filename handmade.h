@@ -40,7 +40,7 @@ static void initializerArena(memory_arena *arena, size_t size, uint8 *base) {
 #define pushStruct(arena, type) (type *)pushSize_(arena, sizeof(type));
 #define pushArray(arena, count, type) (type *)pushSize_(arena, (count) * sizeof(type));
 
-void *pushSize_(memory_arena *arena, size_t size) {
+inline void *pushSize_(memory_arena *arena, size_t size) {
   assert((arena->used + size) <= arena->size);
   void *result = arena->base + arena->used;
   arena->used += size;

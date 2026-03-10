@@ -118,7 +118,7 @@ inline void setTileValue(memory_arena *arena, tile_map *tileMap,
   if (!tileChunk->tiles) {
     uint32 tileCount = tileMap->chunkDim * tileMap->chunkDim;
     tileChunk->tiles = pushArray(arena, tileCount, uint32);
-    for (int i = 0; i < tileCount; ++i) {
+    for (uint32 i = 0; i < tileCount; ++i) {
       tileChunk->tiles[i] = 1;
     }
   }
@@ -133,7 +133,7 @@ inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
 inline tile_map_difference subtract(tile_map *tileMap, tile_map_position *a, tile_map_position *b) {
   tile_map_difference result = {};
 
-  v2 dTileXY = {(float)a->absTileX - (float)b->absTileX, (float)a->absTileY - (float)b->absTileY};
+  v2 dTileXY = {{(float)a->absTileX - (float)b->absTileX, (float)a->absTileY - (float)b->absTileY}};
   float dTileZ = (float)a->absTileZ - (float)b->absTileZ;
 
   result.dXY = dTileXY * tileMap->tileSideInMeters + (a->offset - b->offset);

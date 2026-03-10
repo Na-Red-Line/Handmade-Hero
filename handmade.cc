@@ -266,7 +266,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     gameState->playerP.absTileX = 1;
     gameState->playerP.absTileY = 3;
     gameState->playerP.absTileZ = 0;
-    gameState->playerP.offset = {5.0f, 5.0f};
+    gameState->playerP.offset = {{5.0f, 5.0f}};
 
     initializerArena(&gameState->worldArena,
                      memory->permanentStorageSize - sizeof(game_state),
@@ -520,9 +520,9 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gray = 0.0f;
       }
 
-      v2 tileSid = {(float)(0.5 * tileMap->tileSideInPixels), (float)(0.5 * tileMap->tileSideInPixels)};
-      v2 cen = {screenCenterX - tileMap->metersToPixels * gameState->CameraP.offset.X + ((float)relColumn) * tileMap->tileSideInPixels,
-                screenCenterY + tileMap->metersToPixels * gameState->CameraP.offset.Y - ((float)relRow) * tileMap->tileSideInPixels};
+      v2 tileSid = {{(float)(0.5 * tileMap->tileSideInPixels), (float)(0.5 * tileMap->tileSideInPixels)}};
+      v2 cen = {{screenCenterX - tileMap->metersToPixels * gameState->CameraP.offset.X + ((float)relColumn) * tileMap->tileSideInPixels,
+                 screenCenterY + tileMap->metersToPixels * gameState->CameraP.offset.Y - ((float)relRow) * tileMap->tileSideInPixels}};
       v2 Min = cen - tileSid;
       v2 Max = cen + tileSid;
 
@@ -538,8 +538,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   float playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
   float playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
 
-  v2 playerLeftTop = {playerGroundPointX - (float)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels};
-  v2 playerWidthHeight = {playerWidth, playerHeight};
+  v2 playerLeftTop = {{playerGroundPointX - (float)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
+  v2 playerWidthHeight = {{playerWidth, playerHeight}};
   drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
 
   hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[gameState->heroFacingDirection];
