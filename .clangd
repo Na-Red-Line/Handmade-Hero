@@ -10,6 +10,7 @@ CompileFlags:
     - -Wno-unused-parameter
     - -Wno-unused-variable
     - -Wno-unused-function
+    - -Wno-missing-field-initializers
     - -DHANDMADE_INTERNAL=1
     - -DRECORD=1
 

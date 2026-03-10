@@ -382,7 +382,7 @@ static void winGetInputFileLocation(win_state *winState, bool inputStream, int s
 }
 
 static win_replay_buffer *winGetReplayBuffer(win_state *state, unsigned index) {
-  assert(index < arr_length(state->replayBuffers));
+  assert(index < (unsigned)arr_length(state->replayBuffers));
   win_replay_buffer *result = &state->replayBuffers[index];
   return result;
 }
@@ -862,16 +862,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     newInput->dtForFrame = targetSecondsPerFrame;
 
     // 清空键盘控制器状态
-    game_controller_input *oldController = &oldInput->controller[0];
-    game_controller_input *newController = &newInput->controller[0];
-    memset(newController, 0, sizeof(*newController));
+    game_controller_input *oldKeyController = &oldInput->controller[0];
+    game_controller_input *newKeyController = &newInput->controller[0];
+    memset(newKeyController, 0, sizeof(*newKeyController));
     // 维持键盘前一帧的状态
-    for (int buttonIndex = 0; buttonIndex < arr_length(newController->Button); ++buttonIndex) {
-      newController->Button[buttonIndex].endDown = oldController->Button[buttonIndex].endDown;
+    for (int buttonIndex = 0; buttonIndex < arr_length(newKeyController->Button); ++buttonIndex) {
+      newKeyController->Button[buttonIndex].endDown = oldKeyController->Button[buttonIndex].endDown;
     }
 
-    winProcessPendingMessage(&winState, newController);
-    newController->isConnected = true;
+    winProcessPendingMessage(&winState, newKeyController);
+    newKeyController->isConnected = true;
 
     // 启动鼠标检测
     if (globalMouseOn) {
@@ -888,7 +888,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       winProcessKeyboardMessage(&newInput->mouseButtons[4], GetKeyState(VK_XBUTTON2) & (1 << 15));
     }
 
-    int minControllerCount = min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
+    DWORD minControllerCount = (DWORD)min(arr_length(input->controller) - 1, XUSER_MAX_COUNT);
     // 第零个控制器是键盘
     for (DWORD i = 0; i < minControllerCount; ++i) {
       XINPUT_STATE state = {};

@@ -5,6 +5,7 @@ $WARN = @('-Wall','-Wextra','-Wshadow',
 					'-Wno-unused-parameter',
 					'-Wno-unused-variable',
 					'-Wno-unused-function',
+					'-Wno-missing-field-initializers',
 			    '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/um/',
 			    '-isystem','D:/Windows Kits/10/Include/10.0.26100.0/shared/')
 
