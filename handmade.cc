@@ -434,9 +434,9 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       }
 
       // m/s^2
-      float playerSpeed = 5.0f;
+      float playerSpeed = 10.0f;
       if (controller.actionUp.endDown) {
-        playerSpeed = 10.0f;
+        playerSpeed = 20.0f;
       }
       ddPlayer *= playerSpeed;
       ddPlayer += -1.5f * gameState->dPlayerP;
@@ -457,10 +457,38 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       playerRight.offset.X += 0.5f * playerWidth;
       playerRight = recanonicalizePosition(tileMap, playerRight);
 
-      if (isTileMapPointEmpty(tileMap, newPlayerP) &&
-          isTileMapPointEmpty(tileMap, playerLeft) &&
-          isTileMapPointEmpty(tileMap, playerRight)) {
+      bool collided = false;
+      tile_map_position colP = {};
+      if (!isTileMapPointEmpty(tileMap, newPlayerP)) {
+        colP = newPlayerP;
+        collided = true;
+      }
+      if (!isTileMapPointEmpty(tileMap, playerLeft)) {
+        colP = playerLeft;
+        collided = true;
+      }
+      if (!isTileMapPointEmpty(tileMap, playerRight)) {
+        colP = playerRight;
+        collided = true;
+      }
 
+      if (collided) {
+        v2 r = {};
+        if (colP.absTileX < gameState->playerP.absTileX) {
+          r = v2{{1, 0}};
+        }
+        if (colP.absTileX > gameState->playerP.absTileX) {
+          r = v2{{-1, 0}};
+        }
+        if (colP.absTileY < gameState->playerP.absTileY) {
+          r = v2{{0, 1}};
+        }
+        if (colP.absTileY > gameState->playerP.absTileY) {
+          r = v2{{0, -1}};
+        }
+
+        gameState->dPlayerP = gameState->dPlayerP - 2 * inner(gameState->dPlayerP, r) * r;
+      } else {
         if (!areOnSameTile(&gameState->playerP, &newPlayerP)) {
           u32 tileValue = getTileValue(world->tileMap, newPlayerP);
           if (tileValue == 3) {

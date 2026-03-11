@@ -159,3 +159,92 @@ $$
 - 经典力学基础：位移-速度-加速度关系、匀加速度运动。
 - 数值积分：Euler / Semi-implicit Euler / Verlet。
 - 游戏编程数学：向量、坐标系、插值与稳定性分析。
+
+### 碰撞反弹
+
+$$
+\mathbf{v}' = \mathbf{v} - 2(\mathbf{v}\cdot\mathbf{n})\mathbf{n}
+$$
+
+代码对应：
+
+```cxx
+dPlayerP = dPlayerP - 2 * inner(dPlayerP, r) * r;
+```
+
+其中：
+
+- $\mathbf{v}$：碰撞前速度（`dPlayerP`）
+- $\mathbf{n}$：墙面法线（`r`，需是单位向量）
+- $\mathbf{v}\cdot\mathbf{n}$：速度在法线方向上的分量大小
+
+直观理解：
+
+- 原公式（系数 1）是“去掉朝墙的速度分量”，结果更像“贴墙滑动/停止”。
+- 新公式（系数 2）是“把朝墙分量翻转过去”，即镜面反射，所以会反弹。
+
+### 反弹公式的最小推导
+
+内积 外积 点积
+
+把速度拆成两部分：
+
+$$
+\mathbf{v}=\mathbf{v}_{\parallel}+\mathbf{v}_{\perp}
+$$
+
+其中法线方向分量为：
+
+$$
+\mathbf{v}_{\perp}=(\mathbf{v}\cdot\mathbf{n})\mathbf{n}
+$$
+
+切线方向分量为：
+
+$$
+\mathbf{v}_{\parallel}=\mathbf{v}-\mathbf{v}_{\perp}
+$$
+
+碰撞反弹时：切线不变，法线取反：
+
+$$
+\mathbf{v}'=\mathbf{v}_{\parallel}-\mathbf{v}_{\perp}
+$$
+
+代入得到：
+
+$$
+\mathbf{v}'=(\mathbf{v}-\mathbf{v}_{\perp})-\mathbf{v}_{\perp}=\mathbf{v}-2\mathbf{v}_{\perp}=\mathbf{v}-2(\mathbf{v}\cdot\mathbf{n})\mathbf{n}
+$$
+
+如果想做“有损耗反弹”（不那么弹），可用恢复系数 $e\in[0,1]$：
+
+$$
+\mathbf{v}' = \mathbf{v} - (1+e)(\mathbf{v}\cdot\mathbf{n})\mathbf{n}
+$$
+
+- $e=1$：完全弹性（最弹）
+- $e=0$：不反弹（只移除法线分量）
+
+### 注意点（为什么有时看着不对）
+
+- 法线方向必须正确且最好单位化，否则反弹方向/力度会异常。
+- 角落碰撞可能同帧触发多个方向，法线被覆盖会抖动。
+- 只改速度不做位置修正时，可能“卡墙”或连续抖动。
+
+### 数学零基础学习路线（按顺序）
+
+1. **向量入门（最优先）**
+    - 什么是向量、长度、单位向量。
+    - 点积（内积）代表“投影大小”。
+2. **高中物理最小集**
+    - 位移、速度、加速度三者关系。
+    - 匀加速度公式（你代码里已经在用）。
+3. **游戏中的时间离散化**
+    - 每帧更新（$\Delta t$）是什么。
+    - 为什么会有数值误差和穿透。
+4. **碰撞基础**
+    - 法线、切线、投影分解。
+    - 反射公式与恢复系数 $e$。
+5. **进阶（后面再学）**
+    - Semi-implicit Euler、AABB 扫掠碰撞、连续碰撞检测。

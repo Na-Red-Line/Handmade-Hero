@@ -53,3 +53,8 @@ inline float square(float A) {
   float result = A * A;
   return result;
 }
+
+inline float inner(v2 A, v2 B) {
+  float result = A.X * B.X + A.Y * B.Y;
+  return result;
+}
