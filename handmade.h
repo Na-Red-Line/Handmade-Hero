@@ -6,7 +6,7 @@
 #include <assert.h>
 #include <math.h>
 
-constexpr float PI = 3.14159265359f;
+constexpr f32 PI = 3.14159265359f;
 
 template <typename T, int N>
 constexpr int arr_length(T (&)[N]) { return N; }

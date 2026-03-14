@@ -4,38 +4,38 @@
 
 #include <math.h>
 
-inline i32 roundFloatToI32(float f32) {
-  i32 result = (i32)roundf(f32);
+inline i32 roundFloatToI32(f32 value) {
+  i32 result = (i32)roundf(value);
   return result;
 }
 
-inline i32 roundFloatToU32(float f32) {
-  u32 result = (u32)roundf(f32);
+inline i32 roundFloatToU32(f32 value) {
+  u32 result = (u32)roundf(value);
   return result;
 }
 
-inline i32 floorFloatToI32(float f32) {
-  i32 result = (i32)floorf(f32);
+inline i32 floorFloatToI32(f32 value) {
+  i32 result = (i32)floorf(value);
   return result;
 }
 
-inline i32 truncateFloatToI32(float f32) {
-  i32 result = (i32)f32;
+inline i32 truncateFloatToI32(f32 value) {
+  i32 result = (i32)value;
   return result;
 }
 
-inline float sin(float angle) {
-  float result = sinf(angle);
+inline f32 sin(f32 angle) {
+  f32 result = sinf(angle);
   return result;
 }
 
-inline float cos(float angle) {
-  float result = cosf(angle);
+inline f32 cos(f32 angle) {
+  f32 result = cosf(angle);
   return result;
 }
 
-inline float atan2(float Y, float X) {
-  float result = atan2f(Y, X);
+inline f32 atan2(f32 Y, f32 X) {
+  f32 result = atan2f(Y, X);
   return result;
 }
 

@@ -1,60 +1,61 @@
 #pragma once
 
+#include "handmade_platform.h"
 union v2 {
   struct {
-    float X;
-    float Y;
+    f32 X;
+    f32 Y;
   };
-  float E[2];
+  f32 E[2];
 };
 
-v2 operator*(v2 A, float B) {
+inline v2 operator*(v2 A, f32 B) {
   v2 result = {};
   result.X = A.X * B;
   result.Y = A.Y * B;
   return result;
 }
 
-v2 operator*(float B, v2 A) {
+inline v2 operator*(f32 B, v2 A) {
   v2 result = A * B;
   return result;
 }
 
-v2 &operator*=(v2 &A, float B) {
+inline v2 &operator*=(v2 &A, f32 B) {
   A = A * B;
   return A;
 }
 
-v2 operator+(v2 A, v2 B) {
+inline v2 operator+(v2 A, v2 B) {
   v2 result = {};
   result.X = A.X + B.X;
   result.Y = A.Y + B.Y;
   return result;
 }
 
-v2 &operator+=(v2 &A, v2 B) {
+inline v2 &operator+=(v2 &A, v2 B) {
   A = A + B;
   return A;
 }
 
-v2 operator-(v2 A, v2 B) {
+inline v2 operator-(v2 A, v2 B) {
   v2 result = {};
   result.X = A.X - B.X;
   result.Y = A.Y - B.Y;
   return result;
 }
 
-v2 &operator-=(v2 &A, v2 B) {
+inline v2 &operator-=(v2 &A, v2 B) {
   A = A - B;
   return A;
 }
 
-inline float square(float A) {
-  float result = A * A;
+inline f32 square(f32 A) {
+  f32 result = A * A;
   return result;
 }
 
-inline float inner(v2 A, v2 B) {
-  float result = A.X * B.X + A.Y * B.Y;
+inline f32 inner(v2 A, v2 B) {
+  f32 result = A.X * B.X + A.Y * B.Y;
   return result;
 }

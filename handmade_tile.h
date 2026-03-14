@@ -5,7 +5,7 @@
 
 struct tile_map_difference {
   v2 dXY;
-  float dZ;
+  f32 dZ;
 };
 
 struct tile_map_position {
@@ -37,9 +37,9 @@ struct tile_map {
   u32 chunkMask;
   u32 chunkDim;
 
-  float tileSideInMeters;
+  f32 tileSideInMeters;
   u32 tileSideInPixels;
-  float metersToPixels;
+  f32 metersToPixels;
 
   i32 tileChunkCountX;
   i32 tileChunkCountY;

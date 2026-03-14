@@ -12,6 +12,9 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
+typedef float f32;
+typedef double f64;
+
 struct thread_context {
   int placeholder;
 };
@@ -79,8 +82,8 @@ struct game_button_state {
 };
 
 struct game_controller_input {
-  float stickAverageX;
-  float stickAverageY;
+  f32 stickAverageX;
+  f32 stickAverageY;
 
   union {
     game_button_state Button[12];
@@ -119,7 +122,7 @@ struct game_input {
   int mouseY;
   int mouseZ;
 
-  float dtForFrame;
+  f32 dtForFrame;
 
   // 五个控制器，第一个是键盘
   game_controller_input controller[5];

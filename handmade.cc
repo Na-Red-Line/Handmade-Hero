@@ -8,12 +8,12 @@ static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_s
   i16 *sampleOut = (i16 *)soundOutputBuffer.buffer;
 
 #if 0
-  float wavePeroid = (float)soundOutputBuffer.samplesPerSecond / (float)gameState->toneHz;
+  f32 wavePeroid = (f32)soundOutputBuffer.samplesPerSecond / (f32)gameState->toneHz;
 #endif
 
   for (int sampleIndex = 0; sampleIndex < soundOutputBuffer.bufferSize; ++sampleIndex) {
 #if 0
-		float sineValue = sinf(gameState->tSine); // 余弦y轴坐标
+		f32 sineValue = sinf(gameState->tSine); // 余弦y轴坐标
     int sampleValue = sineValue * soundOutputBuffer.toneVolume;
 #endif
 
@@ -52,7 +52,7 @@ static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOf
 }
 #endif
 
-static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, float R, float G, float B) {
+static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, f32 R, f32 G, f32 B) {
 
   i32 MinX = roundFloatToI32(Min.X);
   i32 MaxX = roundFloatToI32(Max.X);
@@ -79,16 +79,16 @@ static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, float R
 }
 
 static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
-                       float realX, float realY,
+                       f32 realX, f32 realY,
                        i32 alignX, i32 alignY) {
 
-  realX -= (float)alignX;
-  realY -= (float)alignY;
+  realX -= (f32)alignX;
+  realY -= (f32)alignY;
 
   i32 MinX = roundFloatToI32(realX);
   i32 MinY = roundFloatToI32(realY);
   i32 MaxX = MinX + bitmap->width;
-  i32 MaxY = MinY + (float)bitmap->height;
+  i32 MaxY = MinY + (f32)bitmap->height;
 
   i32 sourceOffsetX = 0;
   if (MinX < 0) {
@@ -121,19 +121,19 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
       u32 S = *source;
       u32 D = *dest;
 
-      float alpha = (float)((S >> 24) & 0XFF) / 255;
-      float SR = (float)((S >> 16) & 0XFF);
-      float SG = (float)((S >> 8) & 0XFF);
-      float SB = (float)((S >> 0) & 0XFF);
+      f32 alpha = (f32)((S >> 24) & 0XFF) / 255;
+      f32 SR = (f32)((S >> 16) & 0XFF);
+      f32 SG = (f32)((S >> 8) & 0XFF);
+      f32 SB = (f32)((S >> 0) & 0XFF);
 
-      float DR = (float)((D >> 16) & 0XFF);
-      float DG = (float)((D >> 8) & 0XFF);
-      float DB = (float)((D >> 0) & 0XFF);
+      f32 DR = (f32)((D >> 16) & 0XFF);
+      f32 DG = (f32)((D >> 8) & 0XFF);
+      f32 DB = (f32)((D >> 0) & 0XFF);
 
 #define MX(C) (D##C - alpha * (D##C - S##C))
-      float R = MX(R);
-      float G = MX(G);
-      float B = MX(B);
+      f32 R = MX(R);
+      f32 G = MX(G);
+      f32 B = MX(B);
 
       *dest = (((u32)(R + 0.5f) << 16) |
                ((u32)(G + 0.5f) << 8) |
@@ -223,8 +223,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   assert(&gameInput->controller->terminator - gameInput->controller->Button == arr_length(gameInput->controller->Button));
   assert(sizeof(game_state) <= memory->permanentStorageSize);
 
-  float playerHeight = 1.4f;
-  float playerWidth = 0.75 * playerHeight;
+  f32 playerHeight = 1.4f;
+  f32 playerWidth = 0.75 * playerHeight;
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
@@ -284,7 +284,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
     tileMap->tileSideInMeters = 1.4f;
     tileMap->tileSideInPixels = 60;
-    tileMap->metersToPixels = (float)tileMap->tileSideInPixels / (float)tileMap->tileSideInMeters;
+    tileMap->metersToPixels = (f32)tileMap->tileSideInPixels / (f32)tileMap->tileSideInMeters;
 
     tileMap->tileChunkCountX = 128;
     tileMap->tileChunkCountY = 128;
@@ -434,7 +434,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       }
 
       // m/s^2
-      float playerSpeed = 10.0f;
+      f32 playerSpeed = 10.0f;
       if (controller.actionUp.endDown) {
         playerSpeed = 20.0f;
       }
@@ -521,8 +521,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   drawBitmap(buffer, &gameState->backdrop, 0, 0, 0, 0);
 
-  float screenCenterX = 0.5f * (float)buffer->width;
-  float screenCenterY = 0.5f * (float)buffer->height;
+  f32 screenCenterX = 0.5f * (f32)buffer->width;
+  f32 screenCenterY = 0.5f * (f32)buffer->height;
 
   for (i32 relRow = -10; relRow < 10; ++relRow) {
     for (i32 relColumn = -20; relColumn < 20; ++relColumn) {
@@ -535,7 +535,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         continue;
       }
 
-      float gray = 0.5f;
+      f32 gray = 0.5f;
       if (tileID == 2) {
         gray = 1.0f;
       }
@@ -548,9 +548,9 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gray = 0.0f;
       }
 
-      v2 tileSid = {{(float)(0.5 * tileMap->tileSideInPixels), (float)(0.5 * tileMap->tileSideInPixels)}};
-      v2 cen = {{screenCenterX - tileMap->metersToPixels * gameState->CameraP.offset.X + ((float)relColumn) * tileMap->tileSideInPixels,
-                 screenCenterY + tileMap->metersToPixels * gameState->CameraP.offset.Y - ((float)relRow) * tileMap->tileSideInPixels}};
+      v2 tileSid = {{(f32)(0.5 * tileMap->tileSideInPixels), (f32)(0.5 * tileMap->tileSideInPixels)}};
+      v2 cen = {{screenCenterX - tileMap->metersToPixels * gameState->CameraP.offset.X + ((f32)relColumn) * tileMap->tileSideInPixels,
+                 screenCenterY + tileMap->metersToPixels * gameState->CameraP.offset.Y - ((f32)relRow) * tileMap->tileSideInPixels}};
       v2 Min = cen - tileSid;
       v2 Max = cen + tileSid;
 
@@ -560,13 +560,13 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   auto diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
 
-  float playerR = 1.0f;
-  float playerG = 1.0f;
-  float playerB = 0.0f;
-  float playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
-  float playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
+  f32 playerR = 1.0f;
+  f32 playerG = 1.0f;
+  f32 playerB = 0.0f;
+  f32 playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
+  f32 playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
 
-  v2 playerLeftTop = {{playerGroundPointX - (float)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
+  v2 playerLeftTop = {{playerGroundPointX - (f32)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
   v2 playerWidthHeight = {{playerWidth, playerHeight}};
   drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
 

@@ -356,8 +356,8 @@ static LARGE_INTEGER winGetWallClock() {
   return result;
 }
 
-static float winGetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
-  float secondsElapsedForWork = (float)(end.QuadPart - start.QuadPart) / (float)globalPerfCountFrequency;
+static f32 winGetSecondsElapsed(LARGE_INTEGER start, LARGE_INTEGER end) {
+  f32 secondsElapsedForWork = (f32)(end.QuadPart - start.QuadPart) / (f32)globalPerfCountFrequency;
   return secondsElapsedForWork;
 }
 
@@ -563,13 +563,13 @@ static void winProcessPendingMessage(win_state *state, game_controller_input *ke
 }
 
 // 处理手柄摇杆死区
-static float winProcessXInputStickValue(float value, float thumbDeadZone) {
+static f32 winProcessXInputStickValue(f32 value, f32 thumbDeadZone) {
   // 负数最大值
-  float maxNegativeThumb = 32768.0f - thumbDeadZone;
+  f32 maxNegativeThumb = 32768.0f - thumbDeadZone;
   // 正数最大值
-  float maxPositiveThumb = 32767.0f - thumbDeadZone;
+  f32 maxPositiveThumb = 32767.0f - thumbDeadZone;
   // 摇杆实际数值
-  float stick = value - thumbDeadZone;
+  f32 stick = value - thumbDeadZone;
 
   // 数值更平滑
   if (value < -thumbDeadZone) {
@@ -598,9 +598,9 @@ static void winDebugDrawVertical(win_offscreen_buffer *backbuffer, int xOffset, 
 
 static void winDrawSoundBufferMarker(win_offscreen_buffer *backbuffer,
                                      win_sound_output *soundOutput,
-                                     float c, int padX, int top, int bottom,
+                                     f32 c, int padX, int top, int bottom,
                                      DWORD value, uint32 color) {
-  float XReal32 = (c * (float)value);
+  f32 XReal32 = (c * (f32)value);
   int xOffset = padX + (int)XReal32;
   winDebugDrawVertical(backbuffer, xOffset, top, bottom, color);
 }
@@ -615,7 +615,7 @@ void winDebugSyncDisplay(win_offscreen_buffer *backbuffer,
 
   int LineHeight = 64;
 
-  float C = (float)(backbuffer->width - 2 * PadX) / (float)soundOutput->DSoundBufferSize;
+  f32 C = (f32)(backbuffer->width - 2 * PadX) / (f32)soundOutput->DSoundBufferSize;
   for (int MarkerIndex = 0;
        MarkerIndex < markerCount;
        ++MarkerIndex) {
@@ -762,7 +762,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   // 游戏物理逻辑帧
   int gameUpdateHz = monitorRefresHz / 2;
   // 每帧的时间
-  float targetSecondsPerFrame = 1.0f / gameUpdateHz;
+  f32 targetSecondsPerFrame = 1.0f / gameUpdateHz;
 
   win_sound_output soundOutput = {};
   soundOutput.runingSampleIndex = 0;
@@ -772,7 +772,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   soundOutput.wavePeroid = soundOutput.samplesPerSecond / 256;
   soundOutput.bytesPerSample = sizeof(i16) * 2;
   soundOutput.DSoundBufferSize = soundOutput.samplesPerSecond * soundOutput.bytesPerSample;
-  soundOutput.safetyBytes = (int)((float)soundOutput.DSoundBufferSize / (float)gameUpdateHz / 2.0f);
+  soundOutput.safetyBytes = (int)((f32)soundOutput.DSoundBufferSize / (f32)gameUpdateHz / 2.0f);
 
   winLoadInitDSound(window, soundOutput.samplesPerSecond, soundOutput.DSoundBufferSize);
   winCleanSoundBuffer(&soundOutput);
@@ -833,7 +833,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   DWORD lastPlayCursor = 0;
   bool soundIsValid = false;
   DWORD audioLatencyBytes = 0;
-  float audioLatencySeconds = 0;
+  f32 audioLatencySeconds = 0;
 
 #if 0
   int debugTimeMarkerIndex = 0;
@@ -916,7 +916,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       }
 
       // 摇杆模拟控制方向键
-      float threshold = 0.5f;
+      f32 threshold = 0.5f;
       if (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP) {
         newController->stickAverageY = 1.0f;
         newController->isAnalog = false;
@@ -985,7 +985,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     }
 
     LARGE_INTEGER audioWallClock = winGetWallClock();
-    float fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
+    f32 fromBeginToAudioSeconds = winGetSecondsElapsed(flipWallClock, audioWallClock);
 
     // 控制音频延迟
     DWORD playCursor;  // 当前播放光标
@@ -1002,9 +1002,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
       // 预期写入字节
       DWORD expectedSoundBytesPerFrame = (soundOutput.samplesPerSecond * soundOutput.bytesPerSample) / gameUpdateHz;
       // 每帧剩余时间
-      float secondsLeftUntilFlip = targetSecondsPerFrame - fromBeginToAudioSeconds;
+      f32 secondsLeftUntilFlip = targetSecondsPerFrame - fromBeginToAudioSeconds;
       // 预期剩余时间可以写入的字节
-      DWORD expectedBytesUntilFlip = (DWORD)((secondsLeftUntilFlip / targetSecondsPerFrame) * (float)expectedSoundBytesPerFrame);
+      DWORD expectedBytesUntilFlip = (DWORD)((secondsLeftUntilFlip / targetSecondsPerFrame) * (f32)expectedSoundBytesPerFrame);
       // 预期写入的边界
       DWORD expectedFrameBoundaryByte = playCursor + expectedBytesUntilFlip;
 
@@ -1056,7 +1056,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
         unwrappedWriteCursor += soundOutput.DSoundBufferSize;
       }
       audioLatencyBytes = unwrappedWriteCursor - playCursor;
-      audioLatencySeconds = ((float)audioLatencyBytes / (float)soundOutput.bytesPerSample) / (float)soundOutput.samplesPerSecond;
+      audioLatencySeconds = ((f32)audioLatencyBytes / (f32)soundOutput.bytesPerSample) / (f32)soundOutput.samplesPerSecond;
       printf("BTL:%lu TC:%lu BTW:%lu - PC:%lu WC:%lu DELTA:%lu (%fs)\n",
              byteToLock, targetCursor, bytesToWrite, playCursor, writeCursor, audioLatencyBytes, audioLatencySeconds);
 #endif
@@ -1068,14 +1068,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 
     LARGE_INTEGER endCounter = winGetWallClock();
     // 控制物理逻辑帧
-    float secondsElapsedForWork = winGetSecondsElapsed(lastCounter, endCounter);
+    f32 secondsElapsedForWork = winGetSecondsElapsed(lastCounter, endCounter);
     if (secondsElapsedForWork < targetSecondsPerFrame) {
       if (sleepIsGranular) {
         DWORD sleepMS = (DWORD)(1000.0f * (targetSecondsPerFrame - secondsElapsedForWork));
         if (sleepMS > 0) Sleep(sleepMS);
       }
 
-      float testSecondsElapsedForFrame = winGetSecondsElapsed(lastCounter, winGetWallClock());
+      f32 testSecondsElapsedForFrame = winGetSecondsElapsed(lastCounter, winGetWallClock());
       if (testSecondsElapsedForFrame < targetSecondsPerFrame) {
         // TODO LOG MISSED SLEEP HERE
       }
@@ -1094,11 +1094,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
 #if 0
     uint64 counterElapsed = endCounter.QuadPart - lastCounter.QuadPart;
     // 计算一帧循环耗时毫秒数
-    float MSPerFrame = (float)counterElapsed * 1000.f / (float)globalPerfCountFrequency;
+    f32 MSPerFrame = (f32)counterElapsed * 1000.f / (f32)globalPerfCountFrequency;
     // FPS = 每秒计数器递增的次数 / 一帧循环所经过的计数器刻度数
     uint64 FPS = globalPerfCountFrequency / counterElapsed;
     // 一帧CPU执行了多少万条指令
-    float MCPF = (float)cycleCounterElapsed / 10000.f;
+    f32 MCPF = (f32)cycleCounterElapsed / 10000.f;
     printf("MSPerFrame/FPS/MCPF => %.2fms / %lluFPS / %.2f \n", MSPerFrame, FPS, MCPF);
 #endif
 

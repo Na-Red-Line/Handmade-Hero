@@ -3,12 +3,12 @@
 #include "handmade.h"
 #include "assert.h"
 
-inline void recanonicalizeCoord(tile_map *tileMap, u32 *tile, float *tileRel) {
+inline void recanonicalizeCoord(tile_map *tileMap, u32 *tile, f32 *tileRel) {
   // 需要找到一种不使用除法/乘法方法来进行重新规范化的方法
   // 因为这种方法最终可能会导致结果四舍五入回到你刚刚离开的格子
   // 假设世界是环形拓扑，如果你从一端走出去，就会从另一端回来
 
-  i32 offset = roundFloatToI32(*tileRel / (float)tileMap->tileSideInMeters);
+  i32 offset = roundFloatToI32(*tileRel / (f32)tileMap->tileSideInMeters);
 
   *tile += offset;
   *tileRel -= offset * tileMap->tileSideInMeters;
@@ -133,8 +133,8 @@ inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
 inline tile_map_difference subtract(tile_map *tileMap, tile_map_position *a, tile_map_position *b) {
   tile_map_difference result = {};
 
-  v2 dTileXY = {{(float)a->absTileX - (float)b->absTileX, (float)a->absTileY - (float)b->absTileY}};
-  float dTileZ = (float)a->absTileZ - (float)b->absTileZ;
+  v2 dTileXY = {{(f32)a->absTileX - (f32)b->absTileX, (f32)a->absTileY - (f32)b->absTileY}};
+  f32 dTileZ = (f32)a->absTileZ - (f32)b->absTileZ;
 
   result.dXY = dTileXY * tileMap->tileSideInMeters + (a->offset - b->offset);
   result.dZ = tileMap->tileSideInMeters * dTileZ;
