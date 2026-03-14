@@ -404,6 +404,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   world *world = gameState->world;
   tile_map *tileMap = world->tileMap;
 
+  tile_map_position oldPlayerP = gameState->playerP;
   for (auto &controller : gameInput->controller) {
     if (controller.isAnalog) {
       // NOTE Use analog movement tuning
@@ -444,11 +445,13 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       tile_map_position newPlayerP = gameState->playerP;
 
       // 位置 p = 0.5 * a * t^2 + v * t + p
-      newPlayerP.offset = (0.5f * ddPlayer * square(gameInput->dtForFrame) + gameState->dPlayerP * gameInput->dtForFrame + newPlayerP.offset);
+      v2 playerDelta = 0.5f * ddPlayer * square(gameInput->dtForFrame) + gameState->dPlayerP * gameInput->dtForFrame;
+      newPlayerP.offset += playerDelta;
       // 速度
       gameState->dPlayerP = ddPlayer * gameInput->dtForFrame + gameState->dPlayerP;
       newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
 
+#if 1
       tile_map_position playerLeft = newPlayerP;
       playerLeft.offset.X -= 0.5f * playerWidth;
       playerLeft = recanonicalizePosition(tileMap, playerLeft);
@@ -489,34 +492,66 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
         gameState->dPlayerP = gameState->dPlayerP - 2 * inner(gameState->dPlayerP, r) * r;
       } else {
-        if (!areOnSameTile(&gameState->playerP, &newPlayerP)) {
-          u32 tileValue = getTileValue(world->tileMap, newPlayerP);
-          if (tileValue == 3) {
-            newPlayerP.absTileZ += 1;
-          }
-          if (tileValue == 4) {
-            newPlayerP.absTileZ -= 1;
+        gameState->playerP = newPlayerP;
+      }
+#else
+      u32 MinTileX = 0;
+      u32 MinTileY = 0;
+      u32 OnePastMaxTileX = 0;
+      u32 OnePastMaxTileY = 0;
+      u32 AbsTileZ = gameState->playerP.absTileZ;
+      tile_map_position BestPlayerP = gameState->playerP;
+      f32 BestDistanceSq = LengthSq(PlayerDelta);
+      for (u32 AbsTileY = MinTileY;
+           AbsTileY != OnePastMaxTileY;
+           ++AbsTileY) {
+        for (u32 AbsTileX = MinTileX;
+             AbsTileX != OnePastMaxTileX;
+             ++AbsTileX) {
+          tile_map_position TestTileP = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+          u32 TileValue = GetTileValue(TileMap, TestTileP);
+          if (IsTileValueEmpty(TileValue)) {
+            v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+            v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+
+            tile_map_difference RelNewPlayerP = Subtract(TileMap, &TestTileP, &NewPlayerP);
+            v2 TestP = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerP);
+            TestDistanceSq = ;
+            if (BestDistanceSq > TestDistanceSq) {
+              BestPlayerP = ;
+              BestDistanceSq = ;
+            }
           }
         }
-
-        gameState->playerP = newPlayerP;
-        gameState->CameraP.absTileZ = newPlayerP.absTileZ;
       }
-
-      auto diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
-      if (diff.dXY.X > (9.0f * tileMap->tileSideInMeters)) {
-        gameState->CameraP.absTileX += 17;
-      }
-      if (diff.dXY.X < -(9.0f * tileMap->tileSideInMeters)) {
-        gameState->CameraP.absTileX -= 17;
-      }
-      if (diff.dXY.Y > (5.0f * tileMap->tileSideInMeters)) {
-        gameState->CameraP.absTileY += 9;
-      }
-      if (diff.dXY.Y < -(5.0f * tileMap->tileSideInMeters)) {
-        gameState->CameraP.absTileY -= 9;
-      }
+#endif
     }
+  }
+
+  if (!areOnSameTile(&oldPlayerP, &gameState->playerP)) {
+    u32 tileValue = getTileValue(world->tileMap, gameState->playerP);
+    if (tileValue == 3) {
+      ++gameState->playerP.absTileZ;
+    }
+    if (tileValue == 4) {
+      --gameState->playerP.absTileZ;
+    }
+  }
+
+  gameState->CameraP.absTileZ = gameState->playerP.absTileZ;
+
+  auto diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
+  if (diff.dXY.X > (9.0f * tileMap->tileSideInMeters)) {
+    gameState->CameraP.absTileX += 17;
+  }
+  if (diff.dXY.X < -(9.0f * tileMap->tileSideInMeters)) {
+    gameState->CameraP.absTileX -= 17;
+  }
+  if (diff.dXY.Y > (5.0f * tileMap->tileSideInMeters)) {
+    gameState->CameraP.absTileY += 9;
+  }
+  if (diff.dXY.Y < -(5.0f * tileMap->tileSideInMeters)) {
+    gameState->CameraP.absTileY -= 9;
   }
 
   drawBitmap(buffer, &gameState->backdrop, 0, 0, 0, 0);
@@ -558,7 +593,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     }
   }
 
-  auto diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
+  diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
 
   f32 playerR = 1.0f;
   f32 playerG = 1.0f;
