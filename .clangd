@@ -7,12 +7,17 @@ CompileFlags:
     - -Wall
     - -Wextra
     - -Wshadow
+    - -Wno-gnu-anonymous-struct
     - -Wno-unused-parameter
     - -Wno-unused-variable
     - -Wno-unused-function
     - -Wno-missing-field-initializers
     - -DHANDMADE_INTERNAL=1
     - -DRECORD=1
+    - -isystem
+    - D:/Windows Kits/10/Include/10.0.26100.0/um/
+    - -isystem
+    - D:/Windows Kits/10/Include/10.0.26100.0/shared/
 
 Index:
   Background: Build
