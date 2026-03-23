@@ -513,9 +513,9 @@ static void winProcessPendingMessage(win_state *state, game_controller_input *ke
         } else if (VKCode == VK_RIGHT) {
           winProcessKeyboardMessage(&keyboardController->actionRight, isDown);
         } else if (VKCode == VK_ESCAPE) {
-          winProcessKeyboardMessage(&keyboardController->start, isDown);
-        } else if (VKCode == VK_SPACE) {
           winProcessKeyboardMessage(&keyboardController->back, isDown);
+        } else if (VKCode == VK_SPACE) {
+          winProcessKeyboardMessage(&keyboardController->start, isDown);
         } else if (VKCode == 'V') {
           if (isDown) globalMouseOn = !globalMouseOn;
         }
@@ -805,7 +805,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
   gameMemory.permanentStorage = winState.gameMemoryBlock;
 
 #if RECORD
-  for (int replayIndex = 0; replayIndex < arr_length(winState.replayBuffers); ++replayIndex) {
+  for (u32 replayIndex = 0; replayIndex < arr_length(winState.replayBuffers); ++replayIndex) {
     win_replay_buffer *replayBuffer = &winState.replayBuffers[replayIndex];
 
     winGetInputFileLocation(&winState, false, replayIndex, replayBuffer->filename);
@@ -866,7 +866,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE prevInstance, PWSTR pCmdLine, 
     game_controller_input *newKeyController = &newInput->controller[0];
     memset(newKeyController, 0, sizeof(*newKeyController));
     // 维持键盘前一帧的状态
-    for (int buttonIndex = 0; buttonIndex < arr_length(newKeyController->Button); ++buttonIndex) {
+    for (u32 buttonIndex = 0; buttonIndex < arr_length(newKeyController->Button); ++buttonIndex) {
       newKeyController->Button[buttonIndex].endDown = oldKeyController->Button[buttonIndex].endDown;
     }
 

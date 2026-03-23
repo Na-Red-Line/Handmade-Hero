@@ -191,30 +191,197 @@ static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_en
     u32 blueMask = header->blueMask;
     u32 alphaMask = ~(redMask | greenMask | blueMask);
 
-    bit_scan_result redShift = findLeastSignificantSetBit(redMask);
-    bit_scan_result greenShift = findLeastSignificantSetBit(greenMask);
-    bit_scan_result blueShift = findLeastSignificantSetBit(blueMask);
-    bit_scan_result alphaShift = findLeastSignificantSetBit(alphaMask);
+    bit_scan_result redScan = findLeastSignificantSetBit(redMask);
+    bit_scan_result greenScan = findLeastSignificantSetBit(greenMask);
+    bit_scan_result blueScan = findLeastSignificantSetBit(blueMask);
+    bit_scan_result alphaScan = findLeastSignificantSetBit(alphaMask);
 
-    assert(redShift.found);
-    assert(greenShift.found);
-    assert(blueShift.found);
-    assert(alphaShift.found);
+    assert(redScan.found);
+    assert(greenScan.found);
+    assert(blueScan.found);
+    assert(alphaScan.found);
+
+    i32 redShit = 16 - (i32)redScan.index;
+    i32 greenShit = 8 - (i32)greenScan.index;
+    i32 blueShit = 0 - (i32)blueScan.index;
+    i32 alphaShit = 24 - (i32)alphaScan.index;
 
     u32 *sourceDest = pixels;
     for (int y = 0; y < result.height; ++y) {
       for (int x = 0; x < result.width; ++x) {
         // RR GG BB AA -> AA RR GG BB
         u32 C = *sourceDest;
-        *sourceDest++ = ((((C >> alphaShift.index) & 0XFF) << 24) |
-                         (((C >> redShift.index) & 0XFF) << 16) |
-                         (((C >> greenShift.index) & 0XFF) << 8) |
-                         (((C >> blueShift.index) & 0XFF) << 0));
+        *sourceDest++ = _rotl(C & redMask, redShit) |
+                        _rotl(C & greenMask, greenShit) |
+                        _rotl(C & blueMask, blueShit) |
+                        _rotl(C & alphaMask, alphaShit);
       }
     }
   }
 
   return result;
+}
+
+inline entity *getEntity(game_state *gameState, u32 index) {
+  entity *entity = nullptr;
+
+  if (index > 0 && index < arr_length(gameState->entitys)) {
+    entity = &gameState->entitys[index];
+  }
+
+  return entity;
+}
+
+inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
+  entity *entity = getEntity(gameState, entityIndex);
+
+  entity->exists = true;
+  entity->P.absTileX = 1;
+  entity->P.absTileY = 3;
+  entity->P.offset.X = 5.0f;
+  entity->P.offset.Y = 5.0f;
+  entity->height = 1.4f;
+  entity->width = 0.75f * entity->height;
+
+  if (!getEntity(gameState, gameState->cameraFollowingEntityIndex)) {
+    gameState->cameraFollowingEntityIndex = entityIndex;
+  }
+}
+
+inline static u32 addEntity(game_state *gameState) {
+  u32 entityIndex = gameState->entityCount++;
+
+  assert(gameState->entityCount < arr_length(gameState->entitys));
+  entity *entity = &gameState->entitys[entityIndex];
+  *entity = {};
+
+  return entityIndex;
+}
+
+inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 ddP) {
+  tile_map *tileMap = gameState->world->tileMap;
+
+  if (ddP.X != 0.0f && ddP.Y != 0.0f) {
+    ddP *= 0.707106781187f;
+  }
+
+  // m/s^2
+  f32 playerSpeed = 50.0f;
+  ddP *= playerSpeed;
+
+  ddP += -8.0f * entity->dP;
+
+  tile_map_position oldPlayerP = entity->P;
+  tile_map_position newPlayerP = oldPlayerP;
+
+  // 位置 p = 0.5 * a * t^2 + v * t + p
+  v2 playerDelta = 0.5f * ddP * square(dt) + entity->dP * dt;
+  newPlayerP.offset += playerDelta;
+  // 速度
+  entity->dP = ddP * dt + entity->dP;
+  newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
+
+#if 1
+  tile_map_position playerLeft = newPlayerP;
+  playerLeft.offset.X -= 0.5f * entity->width;
+  playerLeft = recanonicalizePosition(tileMap, playerLeft);
+
+  tile_map_position playerRight = newPlayerP;
+  playerRight.offset.X += 0.5f * entity->width;
+  playerRight = recanonicalizePosition(tileMap, playerRight);
+
+  bool collided = false;
+  tile_map_position colP = {};
+  if (!isTileMapPointEmpty(tileMap, newPlayerP)) {
+    colP = newPlayerP;
+    collided = true;
+  }
+  if (!isTileMapPointEmpty(tileMap, playerLeft)) {
+    colP = playerLeft;
+    collided = true;
+  }
+  if (!isTileMapPointEmpty(tileMap, playerRight)) {
+    colP = playerRight;
+    collided = true;
+  }
+
+  if (collided) {
+    v2 r = {};
+    if (colP.absTileX < entity->P.absTileX) {
+      r = v2{{1, 0}};
+    }
+    if (colP.absTileX > entity->P.absTileX) {
+      r = v2{{-1, 0}};
+    }
+    if (colP.absTileY < entity->P.absTileY) {
+      r = v2{{0, 1}};
+    }
+    if (colP.absTileY > entity->P.absTileY) {
+      r = v2{{0, -1}};
+    }
+
+    entity->dP = entity->dP - 2 * inner(entity->dP, r) * r;
+  } else {
+    entity->P = newPlayerP;
+  }
+#else
+  u32 MinTileX = 0;
+  u32 MinTileY = 0;
+  u32 OnePastMaxTileX = 0;
+  u32 OnePastMaxTileY = 0;
+  u32 AbsTileZ = entity->P.absTileZ;
+  tile_map_position BestPlayerP = entity->P;
+  f32 BestDistanceSq = LengthSq(PlayerDelta);
+  for (u32 AbsTileY = MinTileY;
+       AbsTileY != OnePastMaxTileY;
+       ++AbsTileY) {
+    for (u32 AbsTileX = MinTileX;
+         AbsTileX != OnePastMaxTileX;
+         ++AbsTileX) {
+      tile_map_position TestTileP = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+      u32 TileValue = GetTileValue(TileMap, TestTileP);
+      if (IsTileValueEmpty(TileValue)) {
+        v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+        v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+
+        tile_map_difference RelNewPlayerP = Subtract(TileMap, &TestTileP, &NewPlayerP);
+        v2 TestP = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerP);
+        TestDistanceSq = ;
+        if (BestDistanceSq > TestDistanceSq) {
+          BestPlayerP = ;
+          BestDistanceSq = ;
+        }
+      }
+    }
+  }
+#endif
+
+  if (!areOnSameTile(&oldPlayerP, &entity->P)) {
+    u32 tileValue = getTileValue(tileMap, entity->P);
+    if (tileValue == 3) {
+      ++entity->P.absTileZ;
+    }
+    if (tileValue == 4) {
+      --entity->P.absTileZ;
+    }
+  }
+
+  // 控制朝向
+  if (entity->dP.X == 0.0f && entity->dP.Y == 0.0f) {
+    // NOTE: Leave FacingDirection whatever it was
+  } else if (fabs(entity->dP.X) > fabs(entity->dP.Y)) {
+    if (entity->dP.X > 0) {
+      entity->facingDirection = 0;
+    } else {
+      entity->facingDirection = 2;
+    }
+  } else {
+    if (entity->dP.Y > 0) {
+      entity->facingDirection = 1;
+    } else {
+      entity->facingDirection = 3;
+    }
+  }
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
@@ -228,6 +395,8 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
+    addEntity(gameState);
+
     gameState->backdrop = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
 
     hero_bitmaps *bitmap = gameState->heroBitmaps;
@@ -262,11 +431,6 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
     gameState->CameraP.absTileX = 17 / 2;
     gameState->CameraP.absTileY = 9 / 2;
-
-    gameState->playerP.absTileX = 1;
-    gameState->playerP.absTileY = 3;
-    gameState->playerP.absTileZ = 0;
-    gameState->playerP.offset = {{5.0f, 5.0f}};
 
     initializerArena(&gameState->worldArena,
                      memory->permanentStorageSize - sizeof(game_state),
@@ -404,154 +568,58 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   world *world = gameState->world;
   tile_map *tileMap = world->tileMap;
 
-  tile_map_position oldPlayerP = gameState->playerP;
-  for (auto &controller : gameInput->controller) {
-    if (controller.isAnalog) {
-      // NOTE Use analog movement tuning
-    } else {
-      // NOTE Use digital movement tuning
-      // 加速度
-      v2 ddPlayer = {};
+  for (u32 controllerIndex = 0; controllerIndex < game_input::controllerCount; ++controllerIndex) {
+    game_controller_input *controller = &gameInput->controller[controllerIndex];
+    entity *controllerEntity = getEntity(gameState, gameState->playerIndexForController[controllerIndex]);
 
-      if (controller.moveUp.endDown) {
-        gameState->heroFacingDirection = 1;
-        ddPlayer.Y = 1.0f;
-      }
-      if (controller.moveDown.endDown) {
-        gameState->heroFacingDirection = 3;
-        ddPlayer.Y = -1.0f;
-      }
-      if (controller.moveLeft.endDown) {
-        gameState->heroFacingDirection = 2;
-        ddPlayer.X = -1.0f;
-      }
-      if (controller.moveRight.endDown) {
-        gameState->heroFacingDirection = 0;
-        ddPlayer.X = 1.0f;
-      }
+    if (controllerEntity) {
+      v2 ddP = {};
 
-      if (ddPlayer.X && ddPlayer.Y) {
-        ddPlayer *= 0.707106781187f;
-      }
-
-      // m/s^2
-      f32 playerSpeed = 10.0f;
-      if (controller.actionUp.endDown) {
-        playerSpeed = 20.0f;
-      }
-      ddPlayer *= playerSpeed;
-      ddPlayer += -1.5f * gameState->dPlayerP;
-
-      tile_map_position newPlayerP = gameState->playerP;
-
-      // 位置 p = 0.5 * a * t^2 + v * t + p
-      v2 playerDelta = 0.5f * ddPlayer * square(gameInput->dtForFrame) + gameState->dPlayerP * gameInput->dtForFrame;
-      newPlayerP.offset += playerDelta;
-      // 速度
-      gameState->dPlayerP = ddPlayer * gameInput->dtForFrame + gameState->dPlayerP;
-      newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
-
-#if 1
-      tile_map_position playerLeft = newPlayerP;
-      playerLeft.offset.X -= 0.5f * playerWidth;
-      playerLeft = recanonicalizePosition(tileMap, playerLeft);
-
-      tile_map_position playerRight = newPlayerP;
-      playerRight.offset.X += 0.5f * playerWidth;
-      playerRight = recanonicalizePosition(tileMap, playerRight);
-
-      bool collided = false;
-      tile_map_position colP = {};
-      if (!isTileMapPointEmpty(tileMap, newPlayerP)) {
-        colP = newPlayerP;
-        collided = true;
-      }
-      if (!isTileMapPointEmpty(tileMap, playerLeft)) {
-        colP = playerLeft;
-        collided = true;
-      }
-      if (!isTileMapPointEmpty(tileMap, playerRight)) {
-        colP = playerRight;
-        collided = true;
-      }
-
-      if (collided) {
-        v2 r = {};
-        if (colP.absTileX < gameState->playerP.absTileX) {
-          r = v2{{1, 0}};
-        }
-        if (colP.absTileX > gameState->playerP.absTileX) {
-          r = v2{{-1, 0}};
-        }
-        if (colP.absTileY < gameState->playerP.absTileY) {
-          r = v2{{0, 1}};
-        }
-        if (colP.absTileY > gameState->playerP.absTileY) {
-          r = v2{{0, -1}};
-        }
-
-        gameState->dPlayerP = gameState->dPlayerP - 2 * inner(gameState->dPlayerP, r) * r;
+      if (controller->isAnalog) {
+        ddP = v2{{controller->stickAverageX, controller->stickAverageY}};
       } else {
-        gameState->playerP = newPlayerP;
-      }
-#else
-      u32 MinTileX = 0;
-      u32 MinTileY = 0;
-      u32 OnePastMaxTileX = 0;
-      u32 OnePastMaxTileY = 0;
-      u32 AbsTileZ = gameState->playerP.absTileZ;
-      tile_map_position BestPlayerP = gameState->playerP;
-      f32 BestDistanceSq = LengthSq(PlayerDelta);
-      for (u32 AbsTileY = MinTileY;
-           AbsTileY != OnePastMaxTileY;
-           ++AbsTileY) {
-        for (u32 AbsTileX = MinTileX;
-             AbsTileX != OnePastMaxTileX;
-             ++AbsTileX) {
-          tile_map_position TestTileP = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
-          u32 TileValue = GetTileValue(TileMap, TestTileP);
-          if (IsTileValueEmpty(TileValue)) {
-            v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-            v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-
-            tile_map_difference RelNewPlayerP = Subtract(TileMap, &TestTileP, &NewPlayerP);
-            v2 TestP = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerP);
-            TestDistanceSq = ;
-            if (BestDistanceSq > TestDistanceSq) {
-              BestPlayerP = ;
-              BestDistanceSq = ;
-            }
-          }
+        if (controller->moveUp.endDown) {
+          ddP.Y = 1.0f;
+        }
+        if (controller->moveDown.endDown) {
+          ddP.Y = -1.0f;
+        }
+        if (controller->moveLeft.endDown) {
+          ddP.X = -1.0f;
+        }
+        if (controller->moveRight.endDown) {
+          ddP.X = 1.0f;
         }
       }
-#endif
+
+      movePlayer(gameState, controllerEntity, gameInput->dtForFrame, ddP);
+    } else {
+      if (controller->start.endDown) {
+        u32 entityIndex = addEntity(gameState);
+        initializePlayer(gameState, entityIndex);
+        gameState->playerIndexForController[controllerIndex] = entityIndex;
+      }
     }
   }
 
-  if (!areOnSameTile(&oldPlayerP, &gameState->playerP)) {
-    u32 tileValue = getTileValue(world->tileMap, gameState->playerP);
-    if (tileValue == 3) {
-      ++gameState->playerP.absTileZ;
-    }
-    if (tileValue == 4) {
-      --gameState->playerP.absTileZ;
-    }
-  }
+  entity *cameraFollowingEntity = getEntity(gameState, gameState->cameraFollowingEntityIndex);
+  if (cameraFollowingEntity) {
+    gameState->CameraP.absTileZ = cameraFollowingEntity->P.absTileZ;
 
-  gameState->CameraP.absTileZ = gameState->playerP.absTileZ;
+    auto diff = subtract(tileMap, &cameraFollowingEntity->P, &gameState->CameraP);
 
-  auto diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
-  if (diff.dXY.X > (9.0f * tileMap->tileSideInMeters)) {
-    gameState->CameraP.absTileX += 17;
-  }
-  if (diff.dXY.X < -(9.0f * tileMap->tileSideInMeters)) {
-    gameState->CameraP.absTileX -= 17;
-  }
-  if (diff.dXY.Y > (5.0f * tileMap->tileSideInMeters)) {
-    gameState->CameraP.absTileY += 9;
-  }
-  if (diff.dXY.Y < -(5.0f * tileMap->tileSideInMeters)) {
-    gameState->CameraP.absTileY -= 9;
+    if (diff.dXY.X > (9.0f * tileMap->tileSideInMeters)) {
+      gameState->CameraP.absTileX += 17;
+    }
+    if (diff.dXY.X < -(9.0f * tileMap->tileSideInMeters)) {
+      gameState->CameraP.absTileX -= 17;
+    }
+    if (diff.dXY.Y > (5.0f * tileMap->tileSideInMeters)) {
+      gameState->CameraP.absTileY += 9;
+    }
+    if (diff.dXY.Y < -(5.0f * tileMap->tileSideInMeters)) {
+      gameState->CameraP.absTileY -= 9;
+    }
   }
 
   drawBitmap(buffer, &gameState->backdrop, 0, 0, 0, 0);
@@ -579,7 +647,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         gray = 0.25f;
       }
 
-      if (column == gameState->playerP.absTileX && row == gameState->playerP.absTileY) {
+      if (column == gameState->CameraP.absTileX && row == gameState->CameraP.absTileY) {
         gray = 0.0f;
       }
 
@@ -593,22 +661,27 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     }
   }
 
-  diff = subtract(tileMap, &gameState->playerP, &gameState->CameraP);
+  entity *entity = gameState->entitys;
+  for (u32 entityIndex = 0; entityIndex < gameState->entityCount; ++entityIndex, ++entity) {
+    if (entity->exists) {
+      auto diff = subtract(tileMap, &entity->P, &gameState->CameraP);
 
-  f32 playerR = 1.0f;
-  f32 playerG = 1.0f;
-  f32 playerB = 0.0f;
-  f32 playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
-  f32 playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
+      f32 playerR = 1.0f;
+      f32 playerG = 1.0f;
+      f32 playerB = 0.0f;
+      f32 playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
+      f32 playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
 
-  v2 playerLeftTop = {{playerGroundPointX - (f32)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
-  v2 playerWidthHeight = {{playerWidth, playerHeight}};
-  drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
+      v2 playerLeftTop = {{playerGroundPointX - (f32)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
+      v2 playerWidthHeight = {{playerWidth, playerHeight}};
+      drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
 
-  hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[gameState->heroFacingDirection];
-  drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
-  drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
-  drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
+      hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[entity->facingDirection];
+      drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
+      drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
+      drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
+    }
+  }
 }
 
 extern "C" GAME_GET_SOUND_SAMPLES(gameGetSoundSamples) {

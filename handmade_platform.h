@@ -116,6 +116,8 @@ struct game_controller_input {
 };
 
 struct game_input {
+  static constexpr u8 controllerCount = 5;
+
   // 鼠标控制器
   game_button_state mouseButtons[5];
   int mouseX;
@@ -125,7 +127,7 @@ struct game_input {
   f32 dtForFrame;
 
   // 五个控制器，第一个是键盘
-  game_controller_input controller[5];
+  game_controller_input controller[controllerCount];
 };
 
 struct game_memory {

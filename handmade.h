@@ -8,8 +8,8 @@
 
 constexpr f32 PI = 3.14159265359f;
 
-template <typename T, int N>
-constexpr int arr_length(T (&)[N]) { return N; }
+template <typename T, u32 N>
+constexpr u32 arr_length(T (&)[N]) { return N; }
 
 constexpr u64 KiloBytes(u64 x) { return x << 10; }
 constexpr u64 MegaBytes(u64 x) { return KiloBytes(x) << 10; }
@@ -69,15 +69,25 @@ struct hero_bitmaps {
   loaded_bitmap Torso;
 };
 
+struct entity {
+  bool exists;
+  tile_map_position P;
+  v2 dP;
+  u32 facingDirection;
+  f32 width, height;
+};
+
 struct game_state {
   memory_arena worldArena;
   world *world;
 
+  u32 cameraFollowingEntityIndex;
   tile_map_position CameraP;
-  tile_map_position playerP;
-  v2 dPlayerP;
+
+  u32 playerIndexForController[game_input::controllerCount];
+  u32 entityCount;
+  entity entitys[256];
 
   loaded_bitmap backdrop;
-  u32 heroFacingDirection;
   hero_bitmaps heroBitmaps[4];
 };
