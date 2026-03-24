@@ -141,3 +141,13 @@ inline tile_map_difference subtract(tile_map *tileMap, tile_map_position *a, til
 
   return result;
 }
+
+inline tile_map_position centeredTilePoint(u32 absTileX, u32 absTileY, u32 absTileZ) {
+  tile_map_position result = {};
+
+  result.absTileX = absTileX;
+  result.absTileY = absTileY;
+  result.absTileZ = absTileZ;
+
+  return result;
+}

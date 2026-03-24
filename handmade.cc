@@ -261,12 +261,17 @@ inline static u32 addEntity(game_state *gameState) {
 inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 ddP) {
   tile_map *tileMap = gameState->world->tileMap;
 
+  f32 ddPLength = lengthSq(ddP);
+  if (ddPLength > 1.0f) {
+    ddP *= (1 / sqrtf(ddPLength));
+  }
+
   if (ddP.X != 0.0f && ddP.Y != 0.0f) {
     ddP *= 0.707106781187f;
   }
 
   // m/s^2
-  f32 playerSpeed = 50.0f;
+  f32 playerSpeed = 100.0f;
   ddP *= playerSpeed;
 
   ddP += -8.0f * entity->dP;
@@ -320,37 +325,27 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
       r = v2{{0, -1}};
     }
 
-    entity->dP = entity->dP - 2 * inner(entity->dP, r) * r;
+    // 弹性碰撞
+    entity->dP = entity->dP - 1 * inner(entity->dP, r) * r;
   } else {
     entity->P = newPlayerP;
   }
 #else
-  u32 MinTileX = 0;
-  u32 MinTileY = 0;
-  u32 OnePastMaxTileX = 0;
-  u32 OnePastMaxTileY = 0;
-  u32 AbsTileZ = entity->P.absTileZ;
-  tile_map_position BestPlayerP = entity->P;
-  f32 BestDistanceSq = LengthSq(PlayerDelta);
-  for (u32 AbsTileY = MinTileY;
-       AbsTileY != OnePastMaxTileY;
-       ++AbsTileY) {
-    for (u32 AbsTileX = MinTileX;
-         AbsTileX != OnePastMaxTileX;
-         ++AbsTileX) {
-      tile_map_position TestTileP = CenteredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
-      u32 TileValue = GetTileValue(TileMap, TestTileP);
-      if (IsTileValueEmpty(TileValue)) {
-        v2 MinCorner = -0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
-        v2 MaxCorner = 0.5f * v2{TileMap->TileSideInMeters, TileMap->TileSideInMeters};
+  u32 MinTileX = minimum(oldPlayerP.absTileX, newPlayerP.absTileX);
+  u32 MinTileY = minimum(oldPlayerP.absTileY, newPlayerP.absTileY);
+  u32 OnePastMaxTileX = maximum(oldPlayerP.absTileX, newPlayerP.absTileX) + 1;
+  u32 OnePastMaxTileY = maximum(oldPlayerP.absTileY, newPlayerP.absTileY) + 1;
 
-        tile_map_difference RelNewPlayerP = Subtract(TileMap, &TestTileP, &NewPlayerP);
-        v2 TestP = ClosestPointInRectangle(MinCorner, MaxCorner, RelNewPlayerP);
-        TestDistanceSq = ;
-        if (BestDistanceSq > TestDistanceSq) {
-          BestPlayerP = ;
-          BestDistanceSq = ;
-        }
+  u32 absTileZ = entity->P.absTileZ;
+
+  f32 tMin = 1.0f;
+  for (u32 AbsTileY = MinTileY; AbsTileY != OnePastMaxTileY; ++AbsTileY) {
+    for (u32 AbsTileX = MinTileX; AbsTileX != OnePastMaxTileX; ++AbsTileX) {
+      tile_map_position testTileP = centeredTilePoint(AbsTileX, AbsTileY, AbsTileZ);
+      u32 tileValue = getTileValue(tileMap, testTileP);
+      if (!isTileMapPointEmpty(tileMap, newPlayerP)) {
+        v2 minCorner = -0.5f * v2{tileMap->tileSideInMeters, tileMap->tileSideInMeters};
+        v2 maxCorner = 0.5f * v2{tileMap->tileSideInMeters, tileMap->tileSideInMeters};
       }
     }
   }

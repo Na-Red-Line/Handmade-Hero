@@ -11,6 +11,16 @@ constexpr f32 PI = 3.14159265359f;
 template <typename T, u32 N>
 constexpr u32 arr_length(T (&)[N]) { return N; }
 
+template <typename T>
+constexpr T minimum(T &a, T &b) {
+  return a < b ? a : b;
+}
+
+template <typename T>
+constexpr T maximum(T &a, T &b) {
+  return a > b ? a : b;
+}
+
 constexpr u64 KiloBytes(u64 x) { return x << 10; }
 constexpr u64 MegaBytes(u64 x) { return KiloBytes(x) << 10; }
 constexpr u64 GigaBytes(u64 x) { return MegaBytes(x) << 10; }
