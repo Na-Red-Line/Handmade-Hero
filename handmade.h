@@ -12,12 +12,12 @@ template <typename T, u32 N>
 constexpr u32 arr_length(T (&)[N]) { return N; }
 
 template <typename T>
-constexpr T minimum(T &a, T &b) {
+constexpr T minimum(const T &a, const T &b) {
   return a < b ? a : b;
 }
 
 template <typename T>
-constexpr T maximum(T &a, T &b) {
+constexpr T maximum(const T &a, const T &b) {
   return a > b ? a : b;
 }
 
