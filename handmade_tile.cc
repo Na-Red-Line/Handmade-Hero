@@ -99,6 +99,11 @@ inline u32 getTileValue(tile_map *tileMap, tile_map_position pos) {
   return tileChunkValue;
 }
 
+inline bool isTileMapEmpty(u32 value){
+	bool empty = value == 1 || value == 3 || value == 4;
+	return empty;
+}
+
 inline bool isTileMapPointEmpty(tile_map *tileMap, tile_map_position pos) {
   bool empty = false;
 
@@ -150,4 +155,10 @@ inline tile_map_position centeredTilePoint(u32 absTileX, u32 absTileY, u32 absTi
   result.absTileZ = absTileZ;
 
   return result;
+}
+
+inline tile_map_position offset(tile_map *tileMap, tile_map_position P, v2 offset) {
+  P.offset += offset;
+  P = recanonicalizePosition(tileMap, P);
+  return P;
 }

@@ -1,4 +1,4 @@
-$COMMON_COMPILER_FLAGS = @('-std=gnu++14','-fno-exceptions','-fno-rtti','-g','-gcodeview','-O0','-DHANDMADE_INTERNAL=1','-DRECORD=0')
+$COMMON_COMPILER_FLAGS = @('-std=gnu++14','-fno-exceptions','-fno-rtti','-g','-gcodeview','-O0','-DHANDMADE_INTERNAL=1','-DRECORD=1')
 
 $WARN = @('-Wall','-Wextra','-Wshadow',
 					'-Wno-gnu-anonymous-struct',

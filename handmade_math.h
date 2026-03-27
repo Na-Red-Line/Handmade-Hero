@@ -64,3 +64,8 @@ inline f32 lengthSq(v2 A) {
   f32 result = inner(A, A);
   return result;
 }
+
+inline i32 signOf(i32 value) {
+  i32 result = value >= 0 ? 1 : -1;
+  return result;
+}

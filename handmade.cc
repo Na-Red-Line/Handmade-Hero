@@ -31,27 +31,6 @@ static void game_output_sound(game_sound_output_buffer soundOutputBuffer, game_s
   }
 }
 
-#if 0
-static void renderWeirGradient(game_offscreen_buffer offscreenBuffer, int blueOffset, int greenOffset) {
-  uint8 *row = (uint8 *)offscreenBuffer.memory;
-  int pitch = offscreenBuffer.width * offscreenBuffer.bytesPerPixel;
-
-  for (int y = 0; y < offscreenBuffer.height; ++y) {
-    uint32 *pixel = (uint32 *)row;
-    for (int x = 0; x < offscreenBuffer.width; ++x) {
-      // memory order: RR GG BB xx
-      // loaded in:    xx BB GG RR
-      // window:       xx RR GG BB
-      // memory order: BB GG RR xx
-      uint8 blue = x + blueOffset;
-      uint8 green = y + greenOffset;
-      *pixel++ = ((green << 8) | blue);
-    }
-    row += pitch;
-  }
-}
-#endif
-
 static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, f32 R, f32 G, f32 B) {
 
   i32 MinX = roundFloatToI32(Min.X);
@@ -238,8 +217,8 @@ inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
   entity->exists = true;
   entity->P.absTileX = 1;
   entity->P.absTileY = 3;
-  entity->P.offset.X = 5.0f;
-  entity->P.offset.Y = 5.0f;
+  entity->P.offset.X = 0;
+  entity->P.offset.Y = 0;
   entity->height = 1.4f;
   entity->width = 0.75f * entity->height;
 
@@ -266,7 +245,7 @@ inline static void testWall(f32 wallX, f32 relX, f32 relY,
     f32 tResult = (wallX - relX) / playerDeltaX;
     f32 Y = relY + tResult * playerDeltaY;
     if (tResult >= 0.0f && *tMin > tResult) {
-      if (MaxY <= Y && Y <= MaxY) {
+      if (MinY <= Y && Y <= MaxY) {
         *tMin = maximum(0.0f, tResult - tEpsilon);
       }
     }
@@ -281,26 +260,21 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
     ddP *= (1 / sqrtf(ddPLength));
   }
 
-  if (ddP.X != 0.0f && ddP.Y != 0.0f) {
-    ddP *= 0.707106781187f;
-  }
-
   // m/s^2
-  f32 playerSpeed = 100.0f;
+  f32 playerSpeed = 50.0f;
   ddP *= playerSpeed;
 
   ddP += -8.0f * entity->dP;
 
   tile_map_position oldPlayerP = entity->P;
-  tile_map_position newPlayerP = oldPlayerP;
 
   // 位置 p = 0.5 * a * t^2 + v * t + p
   v2 playerDelta = 0.5f * ddP * square(dt) + entity->dP * dt;
-  newPlayerP.offset += playerDelta;
+
   // 速度
   entity->dP = ddP * dt + entity->dP;
-  newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
 
+  tile_map_position newPlayerP = offset(tileMap, oldPlayerP, playerDelta);
 #if 0
   tile_map_position playerLeft = newPlayerP;
   playerLeft.offset.X -= 0.5f * entity->width;
@@ -346,20 +320,33 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
     entity->P = newPlayerP;
   }
 #else
+
+#if 0
   u32 MinTileX = minimum(oldPlayerP.absTileX, newPlayerP.absTileX);
   u32 MinTileY = minimum(oldPlayerP.absTileY, newPlayerP.absTileY);
   u32 onePastMaxTileX = maximum(oldPlayerP.absTileX, newPlayerP.absTileX) + 1;
   u32 onePastMaxTileY = maximum(oldPlayerP.absTileY, newPlayerP.absTileY) + 1;
+#else
+  u32 startTileX = oldPlayerP.absTileX;
+  u32 startTileY = oldPlayerP.absTileY;
+  u32 endTileX = newPlayerP.absTileX;
+  u32 endTileY = newPlayerP.absTileY;
+
+  i32 deltaX = signOf(endTileX - startTileX);
+  i32 deltaY = signOf(endTileY - startTileY);
+#endif
 
   u32 absTileZ = entity->P.absTileZ;
-
   f32 tMin = 1.0f;
-  for (u32 absTileY = MinTileY; absTileY != onePastMaxTileY; ++absTileY) {
-    for (u32 absTileX = MinTileX; absTileX != onePastMaxTileX; ++absTileX) {
+
+  u32 absTileY = startTileY;
+  for (;;) {
+    u32 absTileX = startTileX;
+    for (;;) {
       tile_map_position testTileP = centeredTilePoint(absTileX, absTileY, absTileZ);
       u32 tileValue = getTileValue(tileMap, testTileP);
 
-      if (!isTileMapPointEmpty(tileMap, newPlayerP)) {
+      if (!isTileMapEmpty(tileValue)) {
         v2 minCorner = -0.5f * v2{{tileMap->tileSideInMeters, tileMap->tileSideInMeters}};
         v2 maxCorner = 0.5f * v2{{tileMap->tileSideInMeters, tileMap->tileSideInMeters}};
 
@@ -368,17 +355,25 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
         v2 rel = relOldPlayerP.dXY;
 
         testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y);
-        testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y);
+        testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y);
         testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X);
-        testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X);
+        testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X);
       }
+      if (absTileX == endTileX) {
+        break;
+      } else {
+        absTileX += deltaX;
+      }
+    }
+
+    if (absTileY == endTileY) {
+      break;
+    } else {
+      absTileY += deltaY;
     }
   }
 
-  newPlayerP = oldPlayerP;
-  newPlayerP.offset += tMin * playerDelta;
-  entity->P = newPlayerP;
-  newPlayerP = recanonicalizePosition(tileMap, newPlayerP);
+  entity->P = offset(tileMap, oldPlayerP, tMin * playerDelta);
 #endif
 
   if (!areOnSameTile(&oldPlayerP, &entity->P)) {
