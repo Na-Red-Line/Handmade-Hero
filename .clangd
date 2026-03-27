@@ -28,3 +28,17 @@ InlayHints:
 Diagnostics:
   Suppress:
     - unused-includes
+
+Completion:
+  ArgumentLists: None
+  HeaderInsertion: Never
+
+---
+If:
+  PathMatch: (^|.*/)data/.*
+
+Index:
+  Background: Skip
+
+Diagnostics:
+  Suppress: '*'
