@@ -219,8 +219,8 @@ inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
   entity->P.absTileY = 3;
   entity->P.offset.X = 0;
   entity->P.offset.Y = 0;
-  entity->height = 1.4f;
-  entity->width = 0.75f * entity->height;
+  entity->height = 0.5f;
+  entity->width = 1.0f;
 
   if (!getEntity(gameState, gameState->cameraFollowingEntityIndex)) {
     gameState->cameraFollowingEntityIndex = entityIndex;
@@ -237,19 +237,24 @@ inline static u32 addEntity(game_state *gameState) {
   return entityIndex;
 }
 
-inline static void testWall(f32 wallX, f32 relX, f32 relY,
+inline static bool testWall(f32 wallX, f32 relX, f32 relY,
                             f32 playerDeltaX, f32 playerDeltaY,
                             f32 *tMin, f32 MinY, f32 MaxY) {
-  f32 tEpsilon = 0.0001f;
+  bool hit = false;
+
+  f32 tEpsilon = 0.00001f;
   if (playerDeltaX != 0.0f) {
     f32 tResult = (wallX - relX) / playerDeltaX;
     f32 Y = relY + tResult * playerDeltaY;
     if (tResult >= 0.0f && *tMin > tResult) {
-      if (MinY <= Y && Y <= MaxY) {
+      if (Y >= MinY && Y <= MaxY) {
         *tMin = maximum(0.0f, tResult - tEpsilon);
+        hit = true;
       }
     }
   }
+
+  return hit;
 }
 
 inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 ddP) {
@@ -257,7 +262,7 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
 
   f32 ddPLength = lengthSq(ddP);
   if (ddPLength > 1.0f) {
-    ddP *= (1 / sqrtf(ddPLength));
+    ddP *= (1.0f / sqrtf(ddPLength));
   }
 
   // m/s^2
@@ -321,59 +326,72 @@ inline static void movePlayer(game_state *gameState, entity *entity, f32 dt, v2 
   }
 #else
 
-#if 0
   u32 MinTileX = minimum(oldPlayerP.absTileX, newPlayerP.absTileX);
   u32 MinTileY = minimum(oldPlayerP.absTileY, newPlayerP.absTileY);
-  u32 onePastMaxTileX = maximum(oldPlayerP.absTileX, newPlayerP.absTileX) + 1;
-  u32 onePastMaxTileY = maximum(oldPlayerP.absTileY, newPlayerP.absTileY) + 1;
-#else
-  u32 startTileX = oldPlayerP.absTileX;
-  u32 startTileY = oldPlayerP.absTileY;
-  u32 endTileX = newPlayerP.absTileX;
-  u32 endTileY = newPlayerP.absTileY;
+  u32 MaxTileX = maximum(oldPlayerP.absTileX, newPlayerP.absTileX);
+  u32 MaxTileY = maximum(oldPlayerP.absTileY, newPlayerP.absTileY);
 
-  i32 deltaX = signOf(endTileX - startTileX);
-  i32 deltaY = signOf(endTileY - startTileY);
-#endif
+  u32 entityTileWidth = (u32)ceilf(entity->width / tileMap->tileSideInMeters);
+  u32 entityTileHeight = (u32)ceilf(entity->height / tileMap->tileSideInMeters);
+
+  MinTileX -= entityTileWidth;
+  MinTileY -= entityTileHeight;
+  MaxTileX += entityTileWidth;
+  MaxTileY += entityTileHeight;
 
   u32 absTileZ = entity->P.absTileZ;
-  f32 tMin = 1.0f;
 
-  u32 absTileY = startTileY;
-  for (;;) {
-    u32 absTileX = startTileX;
-    for (;;) {
-      tile_map_position testTileP = centeredTilePoint(absTileX, absTileY, absTileZ);
-      u32 tileValue = getTileValue(tileMap, testTileP);
+  f32 tRemaining = 1.0f;
 
-      if (!isTileMapEmpty(tileValue)) {
-        v2 minCorner = -0.5f * v2{{tileMap->tileSideInMeters, tileMap->tileSideInMeters}};
-        v2 maxCorner = 0.5f * v2{{tileMap->tileSideInMeters, tileMap->tileSideInMeters}};
+  for (u32 iteration = 0; iteration < 4 && tRemaining > 0.0f; ++iteration) {
 
-        auto relOldPlayerP = subtract(tileMap, &oldPlayerP, &testTileP);
-        // 坐标转换
-        v2 rel = relOldPlayerP.dXY;
+    assert((MaxTileX >= MinTileX) && ((MaxTileX - MinTileX) < 32));
+    assert((MaxTileY >= MinTileY) && ((MaxTileY - MinTileY) < 32));
 
-        testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y);
-        testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y);
-        testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X);
-        testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X);
-      }
-      if (absTileX == endTileX) {
-        break;
-      } else {
-        absTileX += deltaX;
+    f32 tMin = 1.0f;
+    v2 wallNormal = {};
+
+    for (u32 absTileY = MinTileY; absTileY <= MaxTileY; ++absTileY) {
+      for (u32 absTileX = MinTileX; absTileX <= MaxTileX; ++absTileX) {
+        tile_map_position testTileP = centeredTilePoint(absTileX, absTileY, absTileZ);
+        u32 tileValue = getTileValue(tileMap, testTileP);
+
+        if (!isTileMapEmpty(tileValue)) {
+          f32 diameterW = tileMap->tileSideInMeters + entity->width;
+          f32 diameterH = tileMap->tileSideInMeters + entity->height;
+          v2 minCorner = -0.5f * v2{{diameterW, diameterH}};
+          v2 maxCorner = 0.5f * v2{{diameterW, diameterH}};
+
+          auto relOldPlayerP = subtract(tileMap, &entity->P, &testTileP);
+          // 坐标转换
+          v2 rel = relOldPlayerP.dXY;
+
+          if ((playerDelta.X > 0.0f) &&
+              testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
+            wallNormal = v2{{-1, 0}};
+          }
+          if ((playerDelta.X < 0.0f) &&
+              testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
+            wallNormal = v2{{1, 0}};
+          }
+          if ((playerDelta.Y > 0.0f) &&
+              testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
+            wallNormal = v2{{0, -1}};
+          }
+          if ((playerDelta.Y < 0.0f) &&
+              testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
+            wallNormal = v2{{0, 1}};
+          }
+        }
       }
     }
 
-    if (absTileY == endTileY) {
-      break;
-    } else {
-      absTileY += deltaY;
-    }
+    entity->P = offset(tileMap, entity->P, tMin * playerDelta);
+    entity->dP = entity->dP - 1 * inner(entity->dP, wallNormal) * wallNormal;
+    playerDelta = playerDelta - 1 * inner(playerDelta, wallNormal) * wallNormal;
+    tRemaining -= tMin * tRemaining;
   }
 
-  entity->P = offset(tileMap, oldPlayerP, tMin * playerDelta);
 #endif
 
   if (!areOnSameTile(&oldPlayerP, &entity->P)) {
@@ -409,9 +427,6 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   assert(&gameInput->controller->terminator - gameInput->controller->Button == arr_length(gameInput->controller->Button));
   assert(sizeof(game_state) <= memory->permanentStorageSize);
-
-  f32 playerHeight = 1.4f;
-  f32 playerWidth = 0.75 * playerHeight;
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
@@ -691,8 +706,11 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       f32 playerB = 0.0f;
       f32 playerGroundPointX = screenCenterX + diff.dXY.X * tileMap->metersToPixels;
       f32 playerGroundPointY = screenCenterY - diff.dXY.Y * tileMap->metersToPixels;
+      f32 playerWidth = entity->width;
+      f32 playerHeight = entity->height;
 
-      v2 playerLeftTop = {{playerGroundPointX - (f32)(0.5 * playerWidth * tileMap->metersToPixels), playerGroundPointY - playerHeight * tileMap->metersToPixels}};
+      v2 playerLeftTop = {{playerGroundPointX - 0.5f * playerWidth * tileMap->metersToPixels,
+                           playerGroundPointY - 0.5f * playerHeight * tileMap->metersToPixels}};
       v2 playerWidthHeight = {{playerWidth, playerHeight}};
       drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
 

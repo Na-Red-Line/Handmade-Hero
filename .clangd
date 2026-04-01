@@ -35,7 +35,7 @@ Completion:
 
 ---
 If:
-  PathMatch: (^|.*/)data/.*
+  PathMatch: [data/*]
 
 Index:
   Background: Skip
