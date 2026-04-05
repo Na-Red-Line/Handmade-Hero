@@ -61,3 +61,25 @@ inline bit_scan_result findLeastSignificantSetBit(u32 value) {
 
   return result;
 }
+
+inline u32 rotateLeft(u32 value, i32 amount) {
+#if COMPILER_MSVC
+  u32 result = _rotl(value, amount);
+#else
+  amount &= 31;
+  u32 result = (value << amount) | (value >> (32 - amount));
+#endif
+
+  return result;
+}
+
+inline u32 rotateRight(u32 value, i32 amount) {
+#if COMPILER_MSVC
+  u32 result = _rotr(value, amount);
+#else
+  amount &= 31;
+  u32 result = (value >> amount) | (value << (32 - amount));
+#endif
+
+  return result;
+}
