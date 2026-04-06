@@ -79,19 +79,28 @@ struct hero_bitmaps {
   loaded_bitmap Torso;
 };
 
+// 高活跃实体，相对相机的局部坐标位置
 struct high_entity {
-  bool exists;
   v2 P;
   v2 dP;
+
+	u32 absTileZ;
   u32 facingDirection;
+
+	f32 Z;
+	f32 dZ;
 };
 
 struct low_entity {
 };
 
+// 休眠实体，世界坐标
 struct dormant_entity {
   tile_map_position P;
   f32 width, height;
+
+	bool collides;
+	i32 dAbsTileZ;
 };
 
 enum struct entity_residence : u32 {
@@ -126,5 +135,6 @@ struct game_state {
   dormant_entity dormantEntitys[ENTITY_COUNT];
 
   loaded_bitmap backdrop;
+  loaded_bitmap shadow;
   hero_bitmaps heroBitmaps[4];
 };

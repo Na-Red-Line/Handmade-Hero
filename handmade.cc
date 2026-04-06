@@ -59,8 +59,8 @@ static void drawRectangle(game_offscreen_buffer *buffer, v2 Min, v2 Max, f32 R, 
 
 static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
                        f32 realX, f32 realY,
-                       i32 alignX, i32 alignY) {
-
+                       i32 alignX, i32 alignY,
+                       f32 CAlpha = 1.0f) {
   realX -= (f32)alignX;
   realY -= (f32)alignY;
 
@@ -101,6 +101,8 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
       u32 D = *dest;
 
       f32 alpha = (f32)((S >> 24) & 0XFF) / 255;
+      alpha *= CAlpha;
+
       f32 SR = (f32)((S >> 16) & 0XFF);
       f32 SG = (f32)((S >> 8) & 0XFF);
       f32 SB = (f32)((S >> 0) & 0XFF);
@@ -201,10 +203,33 @@ static loaded_bitmap DEBUGLoadBMP(thread_context *thread, debug_platform_read_en
   return result;
 }
 
+inline void changeEntityResidence(game_state *gameState, u32 entityIndex, entity_residence residence) {
+  if (residence == entity_residence::HIGH) {
+    if (gameState->entityResidence[entityIndex] != entity_residence::HIGH) {
+      high_entity *highEntity = &gameState->highEntitys[entityIndex];
+      dormant_entity *dormantEntity = &gameState->dormantEntitys[entityIndex];
+
+			// 高活跃实体相对相机的局部坐标
+      tile_map_difference diff = subtract(gameState->world->tileMap, &dormantEntity->P, &gameState->CameraP);
+
+      highEntity->P = diff.dXY;
+      highEntity->dP = v2{{0, 0}};
+      highEntity->absTileZ = dormantEntity->P.absTileZ;
+      highEntity->facingDirection = 0;
+    }
+  }
+
+  gameState->entityResidence[entityIndex] = residence;
+}
+
 inline entity getEntity(game_state *gameState, entity_residence residence, u32 index) {
   entity entity = {};
 
   if (index > 0 && index < gameState->entityCount) {
+    if (gameState->entityResidence[index] < residence) {
+      changeEntityResidence(gameState, index, residence);
+    }
+
     entity.residence = residence;
     entity.dormant = &gameState->dormantEntitys[index];
     entity.low = &gameState->lowEntitys[index];
@@ -214,10 +239,6 @@ inline entity getEntity(game_state *gameState, entity_residence residence, u32 i
   return entity;
 }
 
-inline void changeEntityResidence(game_state *gameState, entity entity, entity_residence residence) {
-  // TODO
-}
-
 inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
   entity entity = getEntity(gameState, entity_residence::DORMANT, entityIndex);
 
@@ -225,10 +246,11 @@ inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
   entity.dormant->P.absTileY = 3;
   entity.dormant->P.offset.X = 0;
   entity.dormant->P.offset.Y = 0;
-  entity.dormant->width = 0.5f;
-  entity.dormant->height = 1.0f;
+  entity.dormant->width = 1.5f;
+  entity.dormant->height = 0.5f;
+  entity.dormant->collides = true;
 
-  changeEntityResidence(gameState, entity, entity_residence::HIGH);
+  changeEntityResidence(gameState, entityIndex, entity_residence::HIGH);
 
   if (getEntity(gameState, entity_residence::DORMANT, gameState->cameraFollowingEntityIndex).residence == entity_residence::NONEXISTENT) {
     gameState->cameraFollowingEntityIndex = entityIndex;
@@ -255,7 +277,7 @@ inline static bool testWall(f32 wallX, f32 relX, f32 relY,
                             f32 *tMin, f32 MinY, f32 MaxY) {
   bool hit = false;
 
-  f32 tEpsilon = 0.00001f;
+  f32 tEpsilon = 0.001f;
   if (playerDeltaX != 0.0f) {
     f32 tResult = (wallX - relX) / playerDeltaX;
     f32 Y = relY + tResult * playerDeltaY;
@@ -270,7 +292,7 @@ inline static bool testWall(f32 wallX, f32 relX, f32 relY,
   return hit;
 }
 
-inline static void movePlayer(game_state *gameState, entity entity, f32 dt, v2 ddP) {
+inline static void movePlayer(game_state *gameState, entity Entity, f32 dt, v2 ddP) {
   tile_map *tileMap = gameState->world->tileMap;
 
   f32 ddPLength = lengthSq(ddP);
@@ -282,15 +304,15 @@ inline static void movePlayer(game_state *gameState, entity entity, f32 dt, v2 d
   f32 playerSpeed = 50.0f;
   ddP *= playerSpeed;
 
-  ddP += -8.0f * entity.high->dP;
+  ddP += -8.0f * Entity.high->dP;
 
-  v2 oldPlayerP = entity.high->P;
+  v2 oldPlayerP = Entity.high->P;
 
   // 位置 p = 0.5 * a * t^2 + v * t + p
-  v2 playerDelta = 0.5f * ddP * square(dt) + entity.high->dP * dt;
+  v2 playerDelta = 0.5f * ddP * square(dt) + Entity.high->dP * dt;
 
   // 速度
-  entity.high->dP = ddP * dt + entity.high->dP;
+  Entity.high->dP = ddP * dt + Entity.high->dP;
 
   v2 newPlayerP = oldPlayerP + playerDelta;
 
@@ -309,81 +331,83 @@ inline static void movePlayer(game_state *gameState, entity entity, f32 dt, v2 d
   MaxTileY += entityTileHeight;
 
   u32 absTileZ = entity.high->P.absTileZ;
+#endif
 
   f32 tRemaining = 1.0f;
 
   for (u32 iteration = 0; iteration < 4 && tRemaining > 0.0f; ++iteration) {
 
-    assert((MaxTileX >= MinTileX) && ((MaxTileX - MinTileX) < 32));
-    assert((MaxTileY >= MinTileY) && ((MaxTileY - MinTileY) < 32));
-
     f32 tMin = 1.0f;
     v2 wallNormal = {};
+    u32 hitEntityIndx = 0;
 
-    for (u32 absTileY = MinTileY; absTileY <= MaxTileY; ++absTileY) {
-      for (u32 absTileX = MinTileX; absTileX <= MaxTileX; ++absTileX) {
-        tile_map_position testTileP = centeredTilePoint(absTileX, absTileY, absTileZ);
-        u32 tileValue = getTileValue(tileMap, testTileP);
+    for (u32 entityIndex = 1; entityIndex < gameState->entityCount; ++entityIndex) {
 
-        if (!isTileMapEmpty(tileValue)) {
-          f32 diameterW = tileMap->tileSideInMeters + entity->width;
-          f32 diameterH = tileMap->tileSideInMeters + entity->height;
+      entity testEntity = getEntity(gameState, entity_residence::HIGH, entityIndex);
+      if (testEntity.high != Entity.high) {
+        if (testEntity.dormant->collides) {
+          f32 diameterW = tileMap->tileSideInMeters + testEntity.dormant->width;
+          f32 diameterH = tileMap->tileSideInMeters + testEntity.dormant->height;
+
           v2 minCorner = -0.5f * v2{{diameterW, diameterH}};
           v2 maxCorner = 0.5f * v2{{diameterW, diameterH}};
 
-          auto relOldPlayerP = subtract(tileMap, &entity->P, &testTileP);
-          // 坐标转换
-          v2 rel = relOldPlayerP.dXY;
+          v2 rel = Entity.high->P - testEntity.high->P;
 
-          if ((playerDelta.X > 0.0f) && testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
+          if (testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
             wallNormal = v2{{-1, 0}};
+            hitEntityIndx = entityIndex;
           }
-          if ((playerDelta.X < 0.0f) && testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
+
+          if (testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
             wallNormal = v2{{1, 0}};
+            hitEntityIndx = entityIndex;
           }
-          if ((playerDelta.Y > 0.0f) && testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
+
+          if (testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
             wallNormal = v2{{0, -1}};
+            hitEntityIndx = entityIndex;
           }
-          if ((playerDelta.Y < 0.0f) && testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
+
+          if (testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
             wallNormal = v2{{0, 1}};
+            hitEntityIndx = entityIndex;
           }
         }
       }
     }
 
-    entity->P = offset(tileMap, entity->P, tMin * playerDelta);
-    entity->dP = entity->dP - 1 * inner(entity->dP, wallNormal) * wallNormal;
-    playerDelta = playerDelta - 1 * inner(playerDelta, wallNormal) * wallNormal;
-    tRemaining -= tMin * tRemaining;
-  }
+    Entity.high->P += tMin * playerDelta;
+    if (hitEntityIndx) {
+      Entity.high->dP = Entity.high->dP - 1 * inner(Entity.high->dP, wallNormal) * wallNormal;
+      playerDelta = playerDelta - 1 * inner(playerDelta, wallNormal) * wallNormal;
+      tRemaining -= tMin * tRemaining;
 
-  if (!areOnSameTile(&oldPlayerP, &entity->P)) {
-    u32 tileValue = getTileValue(tileMap, entity->P);
-    if (tileValue == 3) {
-      ++entity->P.absTileZ;
-    }
-    if (tileValue == 4) {
-      --entity->P.absTileZ;
+      entity hitEntity = getEntity(gameState, entity_residence::DORMANT, hitEntityIndx);
+      Entity.high->absTileZ += hitEntity.dormant->dAbsTileZ;
+    } else {
+      break;
     }
   }
 
   // 控制朝向
-  if (entity->dP.X == 0.0f && entity->dP.Y == 0.0f) {
-    // NOTE: Leave FacingDirection whatever it was
-  } else if (fabs(entity->dP.X) > fabs(entity->dP.Y)) {
-    if (entity->dP.X > 0) {
-      entity->facingDirection = 0;
+  if (Entity.high->dP.X == 0.0f && Entity.high->dP.Y == 0.0f) {
+    // TODO
+  } else if (fabs(Entity.high->dP.X) > fabs(Entity.high->dP.Y)) {
+    if (Entity.high->dP.X > 0) {
+      Entity.high->facingDirection = 0;
     } else {
-      entity->facingDirection = 2;
+      Entity.high->facingDirection = 2;
     }
   } else {
-    if (entity->dP.Y > 0) {
-      entity->facingDirection = 1;
+    if (Entity.high->dP.Y > 0) {
+      Entity.high->facingDirection = 1;
     } else {
-      entity->facingDirection = 3;
+      Entity.high->facingDirection = 3;
     }
   }
-#endif
+
+  Entity.dormant->P = mapIntoTileSpace(gameState->world->tileMap, gameState->CameraP, Entity.high->P);
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
@@ -397,6 +421,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     addEntity(gameState);
 
     gameState->backdrop = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
+    gameState->shadow = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_hero_shadow.bmp");
 
     hero_bitmaps *bitmap = gameState->heroBitmaps;
 
@@ -591,6 +616,10 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
         }
       }
 
+      if (controller->actionUp.endDown) {
+        controllerEntity.high->dZ = 3.0f;
+      }
+
       movePlayer(gameState, controllerEntity, gameInput->dtForFrame, ddP);
     } else {
       if (controller->start.endDown) {
@@ -601,26 +630,28 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     }
   }
 
+  v2 EntityOffsetForFrame = {};
   entity cameraFollowingEntity = getEntity(gameState, entity_residence::HIGH, gameState->cameraFollowingEntityIndex);
   if (cameraFollowingEntity.residence != entity_residence::NONEXISTENT) {
-#if 0
-    gameState->CameraP.absTileZ = cameraFollowingEntity->P.absTileZ;
+    tile_map_position OldCameraP = gameState->CameraP;
 
-    auto diff = subtract(tileMap, &cameraFollowingEntity->P, &gameState->CameraP);
+    gameState->CameraP.absTileZ = cameraFollowingEntity.dormant->P.absTileZ;
 
-    if (diff.dXY.X > (9.0f * tileMap->tileSideInMeters)) {
+    if (cameraFollowingEntity.high->P.X > (9.0f * tileMap->tileSideInMeters)) {
       gameState->CameraP.absTileX += 17;
     }
-    if (diff.dXY.X < -(9.0f * tileMap->tileSideInMeters)) {
+    if (cameraFollowingEntity.high->P.X < -(9.0f * tileMap->tileSideInMeters)) {
       gameState->CameraP.absTileX -= 17;
     }
-    if (diff.dXY.Y > (5.0f * tileMap->tileSideInMeters)) {
+    if (cameraFollowingEntity.high->P.Y > (5.0f * tileMap->tileSideInMeters)) {
       gameState->CameraP.absTileY += 9;
     }
-    if (diff.dXY.Y < -(5.0f * tileMap->tileSideInMeters)) {
+    if (cameraFollowingEntity.high->P.Y < -(5.0f * tileMap->tileSideInMeters)) {
       gameState->CameraP.absTileY -= 9;
     }
-#endif
+
+    tile_map_difference dCameraP = subtract(tileMap, &gameState->CameraP, &OldCameraP);
+    EntityOffsetForFrame = -dCameraP.dXY;
   }
 
   drawBitmap(buffer, &gameState->backdrop, 0, 0, 0, 0);
@@ -669,23 +700,41 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       low_entity *lowEntity = &gameState->lowEntitys[entityIndex];
       dormant_entity *dormantEntity = &gameState->dormantEntitys[entityIndex];
 
+      highEntity->P += EntityOffsetForFrame;
+
+      f32 dt = gameInput->dtForFrame;
+      f32 ddZ = -9.8f;
+      highEntity->Z = 0.5f * ddZ * square(dt) + highEntity->dZ * dt + highEntity->Z;
+      highEntity->dZ = ddZ * dt + highEntity->dZ;
+      if (highEntity->Z < 0) {
+        highEntity->Z = 0;
+      }
+      f32 CAlpha = 1.0f - 0.5f * highEntity->Z;
+      if (CAlpha < 0) {
+        CAlpha = 0.0f;
+      }
+
       f32 playerR = 1.0f;
       f32 playerG = 1.0f;
       f32 playerB = 0.0f;
       f32 playerGroundPointX = screenCenterX + highEntity->P.X * tileMap->metersToPixels;
       f32 playerGroundPointY = screenCenterY - highEntity->P.Y * tileMap->metersToPixels;
+      f32 Z = -tileMap->metersToPixels * highEntity->Z;
       f32 playerWidth = dormantEntity->width;
       f32 playerHeight = dormantEntity->height;
 
+#if 0
       v2 playerLeftTop = {{playerGroundPointX - 0.5f * playerWidth * tileMap->metersToPixels,
                            playerGroundPointY - 0.5f * playerHeight * tileMap->metersToPixels}};
       v2 playerWidthHeight = {{playerWidth, playerHeight}};
       drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
+#endif
 
       hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[highEntity->facingDirection];
-      drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
-      drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
-      drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY);
+      drawBitmap(buffer, &gameState->shadow, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY, CAlpha);
+      drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
+      drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
+      drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
     }
   }
 }

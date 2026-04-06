@@ -26,6 +26,13 @@ inline v2 &operator*=(v2 &A, f32 B) {
   return A;
 }
 
+inline v2 operator-(v2 A) {
+  v2 result = {};
+  result.X = -A.X;
+  result.Y = -A.Y;
+  return result;
+}
+
 inline v2 operator+(v2 A, v2 B) {
   v2 result = {};
   result.X = A.X + B.X;

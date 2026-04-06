@@ -99,9 +99,9 @@ inline u32 getTileValue(tile_map *tileMap, tile_map_position pos) {
   return tileChunkValue;
 }
 
-inline bool isTileMapEmpty(u32 value){
-	bool empty = value == 1 || value == 3 || value == 4;
-	return empty;
+inline bool isTileMapEmpty(u32 value) {
+  bool empty = value == 1 || value == 3 || value == 4;
+  return empty;
 }
 
 inline bool isTileMapPointEmpty(tile_map *tileMap, tile_map_position pos) {
@@ -131,6 +131,16 @@ inline void setTileValue(memory_arena *arena, tile_map *tileMap,
   setTileValue(tileMap, tileChunk, chunkPos.tileX, chunkPos.tileY, value);
 }
 
+inline tile_map_position mapIntoTileSpace(tile_map *tileMap, tile_map_position basePos, v2 offset) {
+  tile_map_position result = basePos;
+
+  result.offset += offset;
+  recanonicalizeCoord(tileMap, &result.absTileX, &result.offset.X);
+  recanonicalizeCoord(tileMap, &result.absTileY, &result.offset.Y);
+
+  return result;
+}
+
 inline bool areOnSameTile(tile_map_position *a, tile_map_position *b) {
   return a->absTileX == b->absTileX && a->absTileY == b->absTileY && a->absTileZ == b->absTileZ;
 }
@@ -155,10 +165,4 @@ inline tile_map_position centeredTilePoint(u32 absTileX, u32 absTileY, u32 absTi
   result.absTileZ = absTileZ;
 
   return result;
-}
-
-inline tile_map_position offset(tile_map *tileMap, tile_map_position P, v2 offset) {
-  P.offset += offset;
-  P = recanonicalizePosition(tileMap, P);
-  return P;
 }
