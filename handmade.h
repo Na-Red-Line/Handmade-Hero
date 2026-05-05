@@ -94,20 +94,31 @@ struct high_entity {
 struct low_entity {
 };
 
+enum struct Entity_Type : u32
+{
+	NONE,
+	HERO,
+	WALL,
+};
+
 // 休眠实体，世界坐标
-struct dormant_entity {
-  tile_map_position P;
-  f32 width, height;
+struct dormant_entity
+{
+	Entity_Type type;
+
+	tile_map_position P;
+	f32 width, height;
 
 	bool collides;
 	i32 dAbsTileZ;
 };
 
-enum struct entity_residence : u32 {
-  NONEXISTENT,
-  DORMANT,
-  LOW,
-  HIGH,
+enum struct entity_residence : u32
+{
+	NONEXISTENT,
+	DORMANT,
+	LOW,
+	HIGH,
 };
 
 struct entity {
@@ -118,7 +129,7 @@ struct entity {
 };
 
 struct game_state {
-  static constexpr u32 ENTITY_COUNT = 256;
+  static constexpr u32 entity_count = 256;
 
   memory_arena worldArena;
   world *world;
@@ -129,10 +140,10 @@ struct game_state {
   u32 playerIndexForController[game_input::controllerCount];
   u32 entityCount;
 
-  entity_residence entityResidence[ENTITY_COUNT];
-  high_entity highEntitys[ENTITY_COUNT];
-  low_entity lowEntitys[ENTITY_COUNT];
-  dormant_entity dormantEntitys[ENTITY_COUNT];
+  entity_residence entityResidence[entity_count];
+  high_entity highEntitys[entity_count];
+  low_entity lowEntitys[entity_count];
+  dormant_entity dormantEntitys[entity_count];
 
   loaded_bitmap backdrop;
   loaded_bitmap shadow;

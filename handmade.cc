@@ -67,7 +67,7 @@ static void drawBitmap(game_offscreen_buffer *buffer, loaded_bitmap *bitmap,
   i32 MinX = roundFloatToI32(realX);
   i32 MinY = roundFloatToI32(realY);
   i32 MaxX = MinX + bitmap->width;
-  i32 MaxY = MinY + (f32)bitmap->height;
+  i32 MaxY = MinY + bitmap->height;
 
   i32 sourceOffsetX = 0;
   if (MinX < 0) {
@@ -222,7 +222,7 @@ inline void changeEntityResidence(game_state *gameState, u32 entityIndex, entity
   gameState->entityResidence[entityIndex] = residence;
 }
 
-inline entity getEntity(game_state *gameState, entity_residence residence, u32 index) {
+static entity getEntity(game_state *gameState, entity_residence residence, u32 index) {
   entity entity = {};
 
   if (index > 0 && index < gameState->entityCount) {
@@ -239,57 +239,80 @@ inline entity getEntity(game_state *gameState, entity_residence residence, u32 i
   return entity;
 }
 
-inline static void initializePlayer(game_state *gameState, u32 entityIndex) {
-  entity entity = getEntity(gameState, entity_residence::DORMANT, entityIndex);
+static u32 add_entity(game_state *gameState, Entity_Type type)
+{
+	u32 entityIndex = gameState->entityCount++;
+	assert(gameState->entityCount < game_state::entity_count);
 
-  entity.dormant->P.absTileX = 1;
-  entity.dormant->P.absTileY = 3;
-  entity.dormant->P.offset.X = 0;
-  entity.dormant->P.offset.Y = 0;
-  entity.dormant->width = 1.5f;
-  entity.dormant->height = 0.5f;
-  entity.dormant->collides = true;
+	gameState->entityResidence[entityIndex] = entity_residence::DORMANT;
+	gameState->dormantEntitys[entityIndex] = {};
+	gameState->lowEntitys[entityIndex] = {};
+	gameState->highEntitys[entityIndex] = {};
+	gameState->dormantEntitys[entityIndex].type = type;
 
-  changeEntityResidence(gameState, entityIndex, entity_residence::HIGH);
-
-  if (getEntity(gameState, entity_residence::DORMANT, gameState->cameraFollowingEntityIndex).residence == entity_residence::NONEXISTENT) {
-    gameState->cameraFollowingEntityIndex = entityIndex;
-  }
+	return entityIndex;
 }
 
-inline static u32 addEntity(game_state *gameState) {
-  u32 entityIndex = gameState->entityCount++;
+static u32 add_wall(game_state *gameState, u32 absTileX, u32 absTileY, u32 absTileZ)
+{
+	u32 entityIndex = add_entity(gameState, Entity_Type::WALL);
+	entity entity = getEntity(gameState, entity_residence::DORMANT, entityIndex);
 
-  assert(gameState->entityCount < arr_length(gameState->dormantEntitys));
-  assert(gameState->entityCount < arr_length(gameState->lowEntitys));
-  assert(gameState->entityCount < arr_length(gameState->highEntitys));
+	entity.dormant->P.absTileX = absTileX;
+	entity.dormant->P.absTileY = absTileY;
+	entity.dormant->P.absTileZ = absTileZ;
+	entity.dormant->height = gameState->world->tileMap->tileSideInMeters;
+	entity.dormant->width = entity.dormant->height;
+	entity.dormant->collides = true;
 
-  gameState->entityResidence[gameState->entityCount] = entity_residence::DORMANT;
-  gameState->dormantEntitys[gameState->entityCount] = {};
-  gameState->lowEntitys[gameState->entityCount] = {};
-  gameState->highEntitys[gameState->entityCount] = {};
-
-  return entityIndex;
+	return entityIndex;
 }
 
-inline static bool testWall(f32 wallX, f32 relX, f32 relY,
-                            f32 playerDeltaX, f32 playerDeltaY,
-                            f32 *tMin, f32 MinY, f32 MaxY) {
-  bool hit = false;
+static u32 add_player(game_state *gameState)
+{
+	u32 entity_index = add_entity(gameState, Entity_Type::HERO);
+	entity entity = getEntity(gameState, entity_residence::DORMANT, entity_index);
 
-  f32 tEpsilon = 0.001f;
-  if (playerDeltaX != 0.0f) {
-    f32 tResult = (wallX - relX) / playerDeltaX;
-    f32 Y = relY + tResult * playerDeltaY;
-    if (tResult >= 0.0f && *tMin > tResult) {
-      if (Y >= MinY && Y <= MaxY) {
-        *tMin = maximum(0.0f, tResult - tEpsilon);
-        hit = true;
-      }
-    }
-  }
+	entity.dormant->P.absTileX = 1;
+	entity.dormant->P.absTileY = 3;
+	entity.dormant->P.offset.X = 0;
+	entity.dormant->P.offset.Y = 0;
+	entity.dormant->width = 1.5f;
+	entity.dormant->height = 0.5f;
+	entity.dormant->collides = true;
 
-  return hit;
+	changeEntityResidence(gameState, entity_index, entity_residence::HIGH);
+
+	if (getEntity(gameState, entity_residence::DORMANT, gameState->cameraFollowingEntityIndex).residence == entity_residence::NONEXISTENT)
+	{
+		gameState->cameraFollowingEntityIndex = entity_index;
+	}
+
+	return entity_index;
+}
+
+inline static bool test_wall(f32 wallX, f32 relX, f32 relY,
+                             f32 playerDeltaX, f32 playerDeltaY,
+                             f32 *tMin, f32 MinY, f32 MaxY)
+{
+	bool hit = false;
+
+	f32 tEpsilon = 0.001f;
+	if (playerDeltaX != 0.0f)
+	{
+		f32 tResult = (wallX - relX) / playerDeltaX;
+		f32 Y = relY + tResult * playerDeltaY;
+		if (tResult >= 0.0f && *tMin > tResult)
+		{
+			if (Y >= MinY && Y <= MaxY)
+			{
+				*tMin = maximum(0.0f, tResult - tEpsilon);
+				hit = true;
+			}
+		}
+	}
+
+	return hit;
 }
 
 inline static void movePlayer(game_state *gameState, entity Entity, f32 dt, v2 ddP) {
@@ -333,81 +356,147 @@ inline static void movePlayer(game_state *gameState, entity Entity, f32 dt, v2 d
   u32 absTileZ = entity.high->P.absTileZ;
 #endif
 
-  f32 tRemaining = 1.0f;
+  for (u32 iteration = 0; iteration < 4; ++iteration)
+  {
+	  f32 tMin = 1.0f;
+	  v2 wallNormal = {};
+	  u32 hitEntityIndx = 0;
 
-  for (u32 iteration = 0; iteration < 4 && tRemaining > 0.0f; ++iteration) {
+	  v2 desiredPosition = Entity.high->P + playerDelta;
 
-    f32 tMin = 1.0f;
-    v2 wallNormal = {};
-    u32 hitEntityIndx = 0;
+	  for (u32 entityIndex = 1; entityIndex < gameState->entityCount; ++entityIndex)
+	  {
+		  entity testEntity = getEntity(gameState, entity_residence::HIGH, entityIndex);
+		  if (testEntity.high != Entity.high && testEntity.dormant->collides)
+		  {
+			  f32 diameterW = tileMap->tileSideInMeters + testEntity.dormant->width;
+			  f32 diameterH = tileMap->tileSideInMeters + testEntity.dormant->height;
 
-    for (u32 entityIndex = 1; entityIndex < gameState->entityCount; ++entityIndex) {
+			  v2 minCorner = -0.5f * v2{{diameterW, diameterH}};
+			  v2 maxCorner = 0.5f * v2{{diameterW, diameterH}};
 
-      entity testEntity = getEntity(gameState, entity_residence::HIGH, entityIndex);
-      if (testEntity.high != Entity.high) {
-        if (testEntity.dormant->collides) {
-          f32 diameterW = tileMap->tileSideInMeters + testEntity.dormant->width;
-          f32 diameterH = tileMap->tileSideInMeters + testEntity.dormant->height;
+			  v2 rel = Entity.high->P - testEntity.high->P;
 
-          v2 minCorner = -0.5f * v2{{diameterW, diameterH}};
-          v2 maxCorner = 0.5f * v2{{diameterW, diameterH}};
+			  if (test_wall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y))
+			  {
+				  wallNormal = v2{{-1, 0}};
+				  hitEntityIndx = entityIndex;
+			  }
 
-          v2 rel = Entity.high->P - testEntity.high->P;
+			  if (test_wall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y))
+			  {
+				  wallNormal = v2{{1, 0}};
+				  hitEntityIndx = entityIndex;
+			  }
 
-          if (testWall(minCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
-            wallNormal = v2{{-1, 0}};
-            hitEntityIndx = entityIndex;
-          }
+			  if (test_wall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X))
+			  {
+				  wallNormal = v2{{0, -1}};
+				  hitEntityIndx = entityIndex;
+			  }
 
-          if (testWall(maxCorner.X, rel.X, rel.Y, playerDelta.X, playerDelta.Y, &tMin, minCorner.Y, maxCorner.Y)) {
-            wallNormal = v2{{1, 0}};
-            hitEntityIndx = entityIndex;
-          }
+			  if (test_wall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X))
+			  {
+				  wallNormal = v2{{0, 1}};
+				  hitEntityIndx = entityIndex;
+			  }
+		  }
+	  }
 
-          if (testWall(minCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
-            wallNormal = v2{{0, -1}};
-            hitEntityIndx = entityIndex;
-          }
+	  Entity.high->P += tMin * playerDelta;
+	  if (hitEntityIndx)
+	  {
+		  Entity.high->dP = Entity.high->dP - 1 * inner(Entity.high->dP, wallNormal) * wallNormal;
+		  playerDelta = desiredPosition - Entity.high->P;
+		  playerDelta = playerDelta - 1 * inner(playerDelta, wallNormal) * wallNormal;
 
-          if (testWall(maxCorner.Y, rel.Y, rel.X, playerDelta.Y, playerDelta.X, &tMin, minCorner.X, maxCorner.X)) {
-            wallNormal = v2{{0, 1}};
-            hitEntityIndx = entityIndex;
-          }
-        }
-      }
-    }
-
-    Entity.high->P += tMin * playerDelta;
-    if (hitEntityIndx) {
-      Entity.high->dP = Entity.high->dP - 1 * inner(Entity.high->dP, wallNormal) * wallNormal;
-      playerDelta = playerDelta - 1 * inner(playerDelta, wallNormal) * wallNormal;
-      tRemaining -= tMin * tRemaining;
-
-      entity hitEntity = getEntity(gameState, entity_residence::DORMANT, hitEntityIndx);
-      Entity.high->absTileZ += hitEntity.dormant->dAbsTileZ;
-    } else {
-      break;
-    }
+		  entity hitEntity = getEntity(gameState, entity_residence::DORMANT, hitEntityIndx);
+		  Entity.high->absTileZ += hitEntity.dormant->dAbsTileZ;
+	  }
+	  else
+	  {
+		  break;
+	  }
   }
 
   // 控制朝向
-  if (Entity.high->dP.X == 0.0f && Entity.high->dP.Y == 0.0f) {
-    // TODO
-  } else if (fabs(Entity.high->dP.X) > fabs(Entity.high->dP.Y)) {
-    if (Entity.high->dP.X > 0) {
-      Entity.high->facingDirection = 0;
-    } else {
-      Entity.high->facingDirection = 2;
-    }
-  } else {
-    if (Entity.high->dP.Y > 0) {
-      Entity.high->facingDirection = 1;
-    } else {
-      Entity.high->facingDirection = 3;
-    }
+  if (Entity.high->dP.X == 0.0f && Entity.high->dP.Y == 0.0f)
+  {
+	  // TODO
+  }
+  else if (fabs(Entity.high->dP.X) > fabs(Entity.high->dP.Y))
+  {
+	  if (Entity.high->dP.X > 0)
+	  {
+		  Entity.high->facingDirection = 0;
+	  }
+	  else
+	  {
+		  Entity.high->facingDirection = 2;
+	  }
+  }
+  else
+  {
+	  if (Entity.high->dP.Y > 0)
+	  {
+		  Entity.high->facingDirection = 1;
+	  }
+	  else
+	  {
+		  Entity.high->facingDirection = 3;
+	  }
   }
 
   Entity.dormant->P = mapIntoTileSpace(gameState->world->tileMap, gameState->CameraP, Entity.high->P);
+}
+
+static void set_camera(game_state *gameState, tile_map_position newCameraP)
+{
+	tile_map *tileMap = gameState->world->tileMap;
+
+	tile_map_difference dCameraP = subtract(tileMap, &newCameraP, &gameState->CameraP);
+	gameState->CameraP = newCameraP;
+
+	u32 tileSpanX = 17 * 3;
+	u32 tileSpanY = 9 * 3;
+	Rectangle2 cameraBounds = rect_center_dim(v2{{0, 0}},
+	                                          tileMap->tileSideInMeters * v2{{(f32)tileSpanX, (f32)tileSpanY}});
+
+	v2 entityOffsetForFrame = -dCameraP.dXY;
+	for (u32 entityIndex = 1; entityIndex < game_state::entity_count; ++entityIndex)
+	{
+		if (gameState->entityResidence[entityIndex] == entity_residence::HIGH)
+		{
+			high_entity *high = gameState->highEntitys + entityIndex;
+			high->P += entityOffsetForFrame;
+
+			if (!has_in_rectangle(cameraBounds, high->P))
+			{
+				changeEntityResidence(gameState, entityIndex, entity_residence::DORMANT);
+			}
+		}
+	}
+
+	u32 MinTileX = newCameraP.absTileX - tileSpanX / 2;
+	u32 MaxTileX = newCameraP.absTileX + tileSpanX / 2;
+	u32 MinTileY = newCameraP.absTileY - tileSpanY / 2;
+	u32 MaxTileY = newCameraP.absTileY + tileSpanY / 2;
+	for (u32 entityIndex = 1; entityIndex < game_state::entity_count; ++entityIndex)
+	{
+		if (gameState->entityResidence[entityIndex] == entity_residence::DORMANT)
+		{
+			dormant_entity *Dormant = gameState->dormantEntitys + entityIndex;
+
+			if (Dormant->P.absTileZ == newCameraP.absTileZ &&
+			    Dormant->P.absTileX >= MinTileX &&
+			    Dormant->P.absTileX <= MaxTileX &&
+			    Dormant->P.absTileY <= MaxTileY &&
+			    Dormant->P.absTileY >= MinTileY)
+			{
+				changeEntityResidence(gameState, entityIndex, entity_residence::HIGH);
+			}
+		}
+	}
 }
 
 extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
@@ -418,7 +507,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   game_state *gameState = (game_state *)memory->permanentStorage;
   if (!memory->isInitialized) {
-    addEntity(gameState);
+    add_entity(gameState, Entity_Type::NONE);
 
     gameState->backdrop = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_background.bmp");
     gameState->shadow = DEBUGLoadBMP(thread, memory->debugPlatformReadEntireFile, "test/test_hero_shadow.bmp");
@@ -452,9 +541,6 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     bitmap->alignX = 72;
     bitmap->alignY = 182;
     bitmap++;
-
-    gameState->CameraP.absTileX = 17 / 2;
-    gameState->CameraP.absTileY = 9 / 2;
 
     initializerArena(&gameState->worldArena,
                      memory->permanentStorageSize - sizeof(game_state),
@@ -494,15 +580,18 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
     bool doorUp = false;
     bool doorDown = false;
 
-    for (int screenIndex = 0; screenIndex < 50; ++screenIndex) {
+    for (int screenIndex = 0; screenIndex < 2; ++screenIndex) {
       int randomChoice = 0;
-      if (doorUp || doorDown) {
-        randomChoice = random() % 2;
-      } else {
-        randomChoice = random() % 3;
-      }
+	  if (doorUp || doorDown)
+	  {
+		  randomChoice = random() % 2;
+	  }
+	  else
+	  {
+		  randomChoice = random() % 3;
+	  }
 
-      if (randomChoice == 2) {
+	  if (randomChoice == 2) {
         if (absTileZ == 0) {
           doorUp = true;
         } else {
@@ -551,7 +640,12 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
               &gameState->worldArena, world->tileMap,
               absTileX, absTileY, absTileZ,
               value);
-        }
+
+		  if (value == 2)
+		  {
+			  add_wall(gameState, absTileX, absTileY, absTileZ);
+		  }
+		}
       }
 
       doorRight = doorLeft;
@@ -586,7 +680,12 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       }
     }
 
-    memory->isInitialized = true;
+	tile_map_position newCameraP = {};
+	newCameraP.absTileX = 17 / 2;
+	newCameraP.absTileY = 9 / 2;
+	set_camera(gameState, newCameraP);
+
+	memory->isInitialized = true;
   }
 
   world *world = gameState->world;
@@ -623,8 +722,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       movePlayer(gameState, controllerEntity, gameInput->dtForFrame, ddP);
     } else {
       if (controller->start.endDown) {
-        u32 entityIndex = addEntity(gameState);
-        initializePlayer(gameState, entityIndex);
+        u32 entityIndex = add_player(gameState);
         gameState->playerIndexForController[controllerIndex] = entityIndex;
       }
     }
@@ -632,26 +730,49 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
 
   v2 EntityOffsetForFrame = {};
   entity cameraFollowingEntity = getEntity(gameState, entity_residence::HIGH, gameState->cameraFollowingEntityIndex);
-  if (cameraFollowingEntity.residence != entity_residence::NONEXISTENT) {
-    tile_map_position OldCameraP = gameState->CameraP;
+  if (cameraFollowingEntity.residence != entity_residence::NONEXISTENT)
+  {
+	  tile_map_position newCameraP = gameState->CameraP;
 
-    gameState->CameraP.absTileZ = cameraFollowingEntity.dormant->P.absTileZ;
+	  newCameraP.absTileZ = cameraFollowingEntity.dormant->P.absTileZ;
 
-    if (cameraFollowingEntity.high->P.X > (9.0f * tileMap->tileSideInMeters)) {
-      gameState->CameraP.absTileX += 17;
-    }
-    if (cameraFollowingEntity.high->P.X < -(9.0f * tileMap->tileSideInMeters)) {
-      gameState->CameraP.absTileX -= 17;
-    }
-    if (cameraFollowingEntity.high->P.Y > (5.0f * tileMap->tileSideInMeters)) {
-      gameState->CameraP.absTileY += 9;
-    }
-    if (cameraFollowingEntity.high->P.Y < -(5.0f * tileMap->tileSideInMeters)) {
-      gameState->CameraP.absTileY -= 9;
-    }
+#if 1
+	  if (cameraFollowingEntity.high->P.X > (9.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileX += 17;
+	  }
+	  if (cameraFollowingEntity.high->P.X < -(9.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileX -= 17;
+	  }
+	  if (cameraFollowingEntity.high->P.Y > (5.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileY += 9;
+	  }
+	  if (cameraFollowingEntity.high->P.Y < -(5.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileY -= 9;
+	  }
+#else
+	  if (cameraFollowingEntity.high->P.X > (1.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileX += 1;
+	  }
+	  if (cameraFollowingEntity.high->P.X < -(1.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileX -= 1;
+	  }
+	  if (cameraFollowingEntity.high->P.Y > (1.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileY += 1;
+	  }
+	  if (cameraFollowingEntity.high->P.Y < -(1.0f * tileMap->tileSideInMeters))
+	  {
+		  newCameraP.absTileY -= 1;
+	  }
+#endif
 
-    tile_map_difference dCameraP = subtract(tileMap, &gameState->CameraP, &OldCameraP);
-    EntityOffsetForFrame = -dCameraP.dXY;
+	  set_camera(gameState, newCameraP);
   }
 
   drawBitmap(buffer, &gameState->backdrop, 0, 0, 0, 0);
@@ -659,6 +780,7 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
   f32 screenCenterX = 0.5f * (f32)buffer->width;
   f32 screenCenterY = 0.5f * (f32)buffer->height;
 
+#if 0
   for (i32 relRow = -10; relRow < 10; ++relRow) {
     for (i32 relColumn = -20; relColumn < 20; ++relColumn) {
       u32 column = gameState->CameraP.absTileX + relColumn;
@@ -692,8 +814,9 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       drawRectangle(buffer, Min, Max, gray, gray, gray);
     }
   }
+#endif
 
-  for (u32 entityIndex = 0; entityIndex < gameState->entityCount; ++entityIndex) {
+  for (u32 entityIndex = 1; entityIndex < gameState->entityCount; ++entityIndex) {
     if (gameState->entityResidence[entityIndex] == entity_residence::HIGH) {
 
       high_entity *highEntity = &gameState->highEntitys[entityIndex];
@@ -723,19 +846,22 @@ extern "C" GAME_UPDATE_AND_RENDER(gameUpdateAndRender) {
       f32 playerWidth = dormantEntity->width;
       f32 playerHeight = dormantEntity->height;
 
-#if 0
-      v2 playerLeftTop = {{playerGroundPointX - 0.5f * playerWidth * tileMap->metersToPixels,
-                           playerGroundPointY - 0.5f * playerHeight * tileMap->metersToPixels}};
-      v2 playerWidthHeight = {{playerWidth, playerHeight}};
-      drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
-#endif
-
-      hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[highEntity->facingDirection];
-      drawBitmap(buffer, &gameState->shadow, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY, CAlpha);
-      drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
-      drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
-      drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
-    }
+	  if (dormantEntity->type == Entity_Type::HERO)
+	  {
+		  hero_bitmaps *heroBitmaps = &gameState->heroBitmaps[highEntity->facingDirection];
+		  drawBitmap(buffer, &gameState->shadow, playerGroundPointX, playerGroundPointY, heroBitmaps->alignX, heroBitmaps->alignY, CAlpha);
+		  drawBitmap(buffer, &heroBitmaps->Head, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
+		  drawBitmap(buffer, &heroBitmaps->Cape, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
+		  drawBitmap(buffer, &heroBitmaps->Torso, playerGroundPointX, playerGroundPointY + Z, heroBitmaps->alignX, heroBitmaps->alignY);
+	  }
+	  else
+	  {
+		  v2 playerLeftTop = {{playerGroundPointX - 0.5f * playerWidth * tileMap->metersToPixels,
+				               playerGroundPointY - 0.5f * playerHeight * tileMap->metersToPixels}};
+		  v2 playerWidthHeight = {{playerWidth, playerHeight}};
+		  drawRectangle(buffer, playerLeftTop, playerLeftTop + playerWidthHeight * tileMap->metersToPixels, playerR, playerG, playerB);
+	  }
+	}
   }
 }
 

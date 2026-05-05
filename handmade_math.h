@@ -76,3 +76,45 @@ inline i32 signOf(i32 value) {
   i32 result = value >= 0 ? 1 : -1;
   return result;
 }
+
+struct Rectangle2
+{
+	v2 Min;
+	v2 Max;
+};
+
+inline Rectangle2 rect_Min_Max(v2 Max, v2 Min)
+{
+	Rectangle2 result;
+
+	result.Max = Max;
+	result.Min = Min;
+
+	return result;
+}
+
+inline Rectangle2 rect_center_half_dim(v2 center, v2 halfDim)
+{
+	Rectangle2 result;
+
+	result.Max = center + halfDim;
+	result.Min = center - halfDim;
+
+	return result;
+}
+
+inline Rectangle2 rect_center_dim(v2 center, v2 dim)
+{
+	Rectangle2 result = rect_center_half_dim(center, 0.5f * dim);
+	return result;
+}
+
+inline bool has_in_rectangle(Rectangle2 rectangle, v2 test)
+{
+	bool result = (test.X >= rectangle.Min.X &&
+	               test.X <= rectangle.Max.X &&
+	               test.Y >= rectangle.Min.Y &&
+	               test.Y <= rectangle.Max.Y);
+
+	return result;
+}
